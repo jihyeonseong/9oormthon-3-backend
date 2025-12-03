@@ -1,5 +1,42 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+    args: ['\$(JENKINS_SECRET)', '\$(JENKINS_NAME)']
+  - name: docker
+    image: docker:latest
+    command:
+    - sleep
+    args:
+    - 99d
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - sleep
+    args:
+    - 99d
+  - name: aws
+    image: amazon/aws-cli:latest
+    command:
+    - sleep
+    args:
+    - 99d
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+"""
+        }
+    }
     
     environment {
         AWS_REGION = 'ap-northeast-2'
@@ -21,11 +58,13 @@ pipeline {
         
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh """
-                        docker build -t ${FULL_IMAGE} .
-                        docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
-                    """
+                container('docker') {
+                    script {
+                        sh """
+                            docker build -t ${FULL_IMAGE} .
+                            docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
+                        """
+                    }
                 }
             }
         }
@@ -33,22 +72,27 @@ pipeline {
         
         stage('Login to ECR') {
             steps {
-                script {
-                    sh """
-                        aws ecr get-login-password --region ${AWS_REGION} | \
-                        docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                    """
+                container('docker') {
+                    script {
+                        sh """
+                            apk add --no-cache aws-cli || true
+                            aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        """
+                    }
                 }
             }
         }
         
         stage('Push to ECR') {
             steps {
-                script {
-                    sh """
-                        docker push ${FULL_IMAGE}
-                        docker push ${LATEST_IMAGE}
-                    """
+                container('docker') {
+                    script {
+                        sh """
+                            docker push ${FULL_IMAGE}
+                            docker push ${LATEST_IMAGE}
+                        """
+                    }
                 }
             }
         }
@@ -100,7 +144,9 @@ pipeline {
         always {
             script {
                 try {
-                    sh 'docker system prune -f || true'
+                    container('docker') {
+                        sh 'docker system prune -f || true'
+                    }
                 } catch (Exception e) {
                     echo "Cleanup failed: ${e.getMessage()}"
                 }
