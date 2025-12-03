@@ -22,13 +22,13 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                        sh """
-                            docker build -t ${FULL_IMAGE} .
-                            docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
-                        """
-                    }
+                    sh """
+                        docker build -t ${FULL_IMAGE} .
+                        docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
+                    """
                 }
             }
+        }
         
         
         stage('Login to ECR') {
