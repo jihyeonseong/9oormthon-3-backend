@@ -98,8 +98,13 @@ pipeline {
             echo "Pipeline failed. Check logs for details."
         }
         always {
-            // 정리 작업
-            sh 'docker system prune -f || true'
+            script {
+                try {
+                    sh 'docker system prune -f || true'
+                } catch (Exception e) {
+                    echo "Cleanup failed: ${e.getMessage()}"
+                }
+            }
         }
     }
 }
