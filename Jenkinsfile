@@ -22,15 +22,14 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    dir('backend-example') {
-                        sh """
-                            docker build -t ${FULL_IMAGE} .
-                            docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
-                        """
-                    }
+                    sh """
+                        docker build -t ${FULL_IMAGE} .
+                        docker tag ${FULL_IMAGE} ${LATEST_IMAGE}
+                    """
                 }
             }
         }
+        
         
         stage('Login to ECR') {
             steps {
@@ -57,7 +56,7 @@ pipeline {
         stage('Update K8s Manifest') {
             steps {
                 script {
-                    dir('k8s/backend') {
+                    dir('k8s') {
                         sh """
                             # 이미지 태그 업데이트
                             sed -i.bak 's|image:.*backend:.*|image: ${FULL_IMAGE}|g' backend.yaml
