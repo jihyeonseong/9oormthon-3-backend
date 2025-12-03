@@ -6,7 +6,7 @@ namespace: goormthon-3
 resources:
   - backend.yaml
   - mysql-secret.yaml
-  # - ingress.yaml # API 호출 방식이 Client-Side인 경우 주석 해제
+  - ingress.yaml # /api 경로를 외부에서 backend-service 로 보내기 위한 Ingress
 
 configMapGenerator:
   - name: backend-config
