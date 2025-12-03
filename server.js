@@ -46,7 +46,7 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// 사용자 생성
+// 사용자 생성 (POST - 클러스터 내부/기타 클라이언트용)
 app.post('/api/users', async (req, res) => {
   try {
     const { name, email } = req.body;
@@ -60,6 +60,25 @@ app.post('/api/users', async (req, res) => {
     res.json({ id: result.insertId, name, email });
   } catch (error) {
     console.error('Error creating user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 사용자 생성 (GET - 브라우저에서 POST가 막힌 환경 우회용)
+// 예: GET /api/users/create?name=aaa&email=bbb
+app.get('/api/users/create', async (req, res) => {
+  try {
+    const { name, email } = req.query;
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+    const [result] = await pool.execute(
+      'INSERT INTO users (name, email) VALUES (?, ?)',
+      [name, email]
+    );
+    res.json({ id: result.insertId, name, email });
+  } catch (error) {
+    console.error('Error creating user via GET /api/users/create:', error);
     res.status(500).json({ error: error.message });
   }
 });
