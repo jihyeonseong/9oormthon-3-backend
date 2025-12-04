@@ -499,6 +499,71 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
   }
 });
 
+// ==================== 제주 버스 API 프록시 ====================
+
+// 제주 버스 도착 정보 조회 (GET /api/bus/arrival)
+app.get('/api/bus/arrival', async (req, res) => {
+  try {
+    const { station_id } = req.query;
+    
+    // 제주 버스 API 호출 (station_id가 있으면 쿼리 파라미터로 추가)
+    let busApiUrl = 'https://bus.jeju.go.kr/api/searchArrivalInfoList.do';
+    if (station_id) {
+      busApiUrl += `?station_id=${station_id}`;
+    }
+    
+    // Node.js 18+에서는 fetch가 내장되어 있음
+    // 없으면 node-fetch 패키지 필요
+    let fetch;
+    try {
+      // Node.js 18+ 내장 fetch 사용
+      fetch = globalThis.fetch || require('node-fetch');
+    } catch (e) {
+      // node-fetch가 없으면 https 모듈 사용
+      const https = require('https');
+      fetch = (url) => {
+        return new Promise((resolve, reject) => {
+          https.get(url, (response) => {
+            let data = '';
+            response.on('data', (chunk) => { data += chunk; });
+            response.on('end', () => {
+              try {
+                resolve({
+                  ok: response.statusCode === 200,
+                  status: response.statusCode,
+                  json: () => Promise.resolve(JSON.parse(data))
+                });
+              } catch (e) {
+                reject(new Error('Failed to parse JSON'));
+              }
+            });
+          }).on('error', reject);
+        });
+      };
+    }
+    
+    const response = await fetch(busApiUrl);
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: 'Failed to fetch bus data',
+        status: response.status 
+      });
+    }
+    
+    const data = await response.json();
+    
+    res.json({
+      success: true,
+      station_id: station_id || null,
+      data: data
+    });
+  } catch (error) {
+    console.error('Bus API proxy error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== AWS S3 API ====================
 
 // 파일 업로드 (POST /api/s3/upload)
