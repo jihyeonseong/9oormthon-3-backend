@@ -254,74 +254,94 @@ app.post('/api/quests/:id/check', async (req, res) => {
     const { id } = req.params;
     const { answer, user_id } = req.body; // user_id는 user_id 필드 (예: "지현23")
     
+    // 파라미터 검증
     if (!answer) {
       return res.status(400).json({ error: 'Answer is required' });
     }
     
-    // 문제 정보 조회 (정답, 점수)
-    const [questRows] = await pool.execute(
-      'SELECT correct_answer, score FROM quests WHERE id = ?',
-      [id]
-    );
+    if (!id) {
+      return res.status(400).json({ error: 'Quest ID is required' });
+    }
+    
+    // 문제 전체 정보 조회 (정답 확인 페이지에 필요한 모든 정보)
+    let questRows;
+    try {
+      [questRows] = await pool.execute(
+        'SELECT * FROM quests WHERE id = ?',
+        [id]
+      );
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return res.status(503).json({ 
+        error: 'Database connection failed', 
+        message: 'MySQL 서버에 연결할 수 없습니다. DB 연결을 확인해주세요.',
+        details: dbError.message 
+      });
+    }
     
     if (questRows.length === 0) {
-      return res.status(404).json({ error: 'Quest not found' });
+      return res.status(404).json({ error: `Quest not found with id: ${id}` });
     }
     
     const quest = questRows[0];
     const isCorrect = quest.correct_answer.toUpperCase() === answer.toUpperCase();
-    const earnedScore = isCorrect ? quest.score : 0;
+    const finalScore = isCorrect ? 1 : 0; // 맞췄으면 1점, 틀렸으면 0점
     
     // 사용자 ID가 제공된 경우 풀이 기록 저장 (한 번 기록되면 변경되지 않음)
     if (user_id) {
       try {
-        // 문제 전체 정보 조회 (지역, 문제 내용 포함)
-        const [questInfoRows] = await pool.execute(
-          'SELECT city, town, village, question, correct_answer FROM quests WHERE id = ?',
-          [id]
+        // 풀이 기록 저장 (ON DUPLICATE KEY UPDATE로 중복 방지, 한 번 기록되면 변경 안 됨)
+        await pool.execute(
+          `INSERT INTO user_quest_scores 
+           (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE 
+             user_id = user_id`, // 중복 시 업데이트하지 않음 (한 번 기록되면 변경 안 됨)
+          [
+            user_id, 
+            id, 
+            quest.city, 
+            quest.town, 
+            quest.village, 
+            quest.question,
+            answer.toUpperCase(), 
+            quest.correct_answer, 
+            finalScore
+          ]
         );
-        
-        if (questInfoRows.length > 0) {
-          const questInfo = questInfoRows[0];
-          const finalScore = isCorrect ? 1 : 0; // 맞췄으면 1점, 틀렸으면 0점
-          
-          // 풀이 기록 저장 (ON DUPLICATE KEY UPDATE로 중복 방지, 한 번 기록되면 변경 안 됨)
-          await pool.execute(
-            `INSERT INTO user_quest_scores 
-             (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE 
-               user_id = user_id`, // 중복 시 업데이트하지 않음 (한 번 기록되면 변경 안 됨)
-            [
-              user_id, 
-              id, 
-              questInfo.city, 
-              questInfo.town, 
-              questInfo.village, 
-              questInfo.question,
-              answer.toUpperCase(), 
-              questInfo.correct_answer, 
-              finalScore
-            ]
-          );
-        }
       } catch (scoreError) {
         console.error('Error saving quest record:', scoreError);
         // 기록 저장 실패해도 정답 확인은 진행
       }
     }
     
-    const finalScore = isCorrect ? 1 : 0; // 맞췄으면 1점, 틀렸으면 0점
-    
+    // 정답 확인 페이지에 필요한 모든 정보 반환
     res.json({
-      correct: isCorrect,
-      correctAnswer: quest.correct_answer,
+      id: quest.id,
+      region: {
+        city: quest.city,
+        town: quest.town,
+        village: quest.village
+      },
+      question: quest.question,
+      options: {
+        A: quest.option_a,
+        B: quest.option_b,
+        C: quest.option_c,
+        D: quest.option_d
+      },
+      userAnswer: answer.toUpperCase(), // 사용자가 선택한 답
+      correctAnswer: quest.correct_answer, // 실제 정답
+      correct: isCorrect, // 정답 여부
       score: finalScore, // 맞췄으면 1점, 틀렸으면 0점
       questScore: quest.score // 문제 원래 점수 (참고용)
     });
   } catch (error) {
     console.error('Error checking quest answer:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
