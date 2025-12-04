@@ -27,7 +27,10 @@ const s3Client = new S3Client({
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
-  }
+  },
+  // 리전별 엔드포인트 자동 설정
+  forcePathStyle: false, // virtual-hosted-style 사용 (기본값)
+  // endpoint는 자동으로 리전에 맞게 설정됨
 });
 
 const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || '';
@@ -518,14 +521,16 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
       Bucket: S3_BUCKET_NAME,
       Key: key,
       Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'public-read' // 또는 'private'로 설정
+      ContentType: req.file.mimetype
+      // ACL은 버킷 정책으로 관리하는 것이 권장됨
+      // ACL: 'public-read' // 일부 리전에서는 ACL이 비활성화될 수 있음
     });
 
     await s3Client.send(command);
 
-    // S3 URL 생성
-    const fileUrl = `https://${S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-northeast-2'}.amazonaws.com/${key}`;
+    // S3 URL 생성 (리전별 엔드포인트)
+    const region = process.env.AWS_REGION || 'ap-northeast-2';
+    const fileUrl = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${key}`;
 
     res.json({
       success: true,
