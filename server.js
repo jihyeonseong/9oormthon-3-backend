@@ -192,7 +192,10 @@ app.delete('/api/users/:id', async (req, res) => {
 // 지역별 랜덤 퀘스트 문제 조회
 app.get('/api/quests/random', async (req, res) => {
   try {
-    const { city, town, village } = req.query;
+    // URL 디코딩 처리 (한글 파라미터 지원)
+    const city = req.query.city ? decodeURIComponent(req.query.city) : null;
+    const town = req.query.town ? decodeURIComponent(req.query.town) : null;
+    const village = req.query.village ? decodeURIComponent(req.query.village) : null;
     
     // 최소한 city는 필요
     if (!city) {
@@ -200,6 +203,9 @@ app.get('/api/quests/random', async (req, res) => {
     }
     
     // 지역별 랜덤 문제 1개 조회
+    // 디버깅을 위해 로그 추가
+    console.log('Quest search params:', { city, town, village });
+    
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
@@ -215,11 +221,18 @@ app.get('/api/quests/random', async (req, res) => {
     
     query += ' ORDER BY RAND() LIMIT 1';
     
+    console.log('Executing query:', query, 'with params:', params);
+    
     const [rows] = await pool.execute(query, params);
     
+    console.log('Query result count:', rows.length);
+    
     if (rows.length === 0) {
+      // 사용 가능한 city 목록 조회해서 힌트 제공
+      const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
       return res.status(404).json({ 
-        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}` 
+        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
+        availableCities: availableCities.map(r => r.city)
       });
     }
     
