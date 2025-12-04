@@ -794,6 +794,7 @@ app.post('/api/quests/:id/image', upload.single('image'), async (req, res) => {
 });
 
 // 파일 업로드 (POST /api/s3/upload)
+// user_id를 받아서 사용자별 업로드 히스토리 저장
 app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -802,6 +803,11 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
 
     if (!S3_BUCKET_NAME) {
       return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    const user_id = req.body.user_id;
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
     }
 
     const fileName = req.body.fileName || `${Date.now()}-${req.file.originalname}`;
@@ -824,8 +830,41 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
     const region = process.env.AWS_REGION || 'ap-northeast-2';
     const fileUrl = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${key}`;
 
+    // 사용자별 업로드 히스토리 저장
+    try {
+      // 업로드 히스토리 테이블이 없으면 생성
+      await pool.execute(`
+        CREATE TABLE IF NOT EXISTS user_upload_history (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id VARCHAR(50) NOT NULL COMMENT '사용자 ID',
+          file_name VARCHAR(255) NOT NULL COMMENT '파일명',
+          file_key VARCHAR(500) NOT NULL COMMENT 'S3 파일 키 (경로 포함)',
+          file_url TEXT NOT NULL COMMENT 'S3 파일 URL',
+          file_size BIGINT NOT NULL COMMENT '파일 크기 (bytes)',
+          content_type VARCHAR(100) COMMENT '파일 타입 (MIME type)',
+          uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '업로드 시간',
+          INDEX idx_user_id (user_id),
+          INDEX idx_uploaded_at (uploaded_at)
+        ) COMMENT='사용자별 파일 업로드 히스토리'
+      `);
+
+      // 히스토리 저장
+      await pool.execute(
+        `INSERT INTO user_upload_history 
+         (user_id, file_name, file_key, file_url, file_size, content_type) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [user_id, fileName, key, fileUrl, req.file.size, req.file.mimetype]
+      );
+
+      console.log(`[업로드 히스토리] user_id: ${user_id}, file: ${fileName} 저장 완료`);
+    } catch (historyError) {
+      // 히스토리 저장 실패해도 업로드는 성공으로 처리
+      console.error('[업로드 히스토리 저장 실패]:', historyError.message);
+    }
+
     res.json({
       success: true,
+      user_id: user_id,
       fileName: fileName,
       key: key,
       url: fileUrl,
@@ -833,6 +872,39 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
     });
   } catch (error) {
     console.error('S3 upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 사용자별 업로드 히스토리 조회 (GET /api/s3/upload/history/:user_id)
+app.get('/api/s3/upload/history/:user_id', async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    
+    const [rows] = await pool.execute(
+      `SELECT 
+        id,
+        user_id,
+        file_name,
+        file_key,
+        file_url,
+        file_size,
+        content_type,
+        uploaded_at
+       FROM user_upload_history
+       WHERE user_id = ?
+       ORDER BY uploaded_at DESC`,
+      [user_id]
+    );
+
+    res.json({
+      success: true,
+      user_id: user_id,
+      count: rows.length,
+      history: rows
+    });
+  } catch (error) {
+    console.error('Upload history fetch error:', error);
     res.status(500).json({ error: error.message });
   }
 });
