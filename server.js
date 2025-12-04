@@ -1,7 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 
 const app = express();
@@ -79,9 +79,8 @@ async function getSeongsanImageUrl(index) {
   try {
     const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     
-    // S3에 저장된 실제 파일명 사용
-    // 사용자가 제공한 URL 형식에 맞춰 파일명 구성
-    // 실제 S3에 저장된 파일명: uploads/성산0.jpeg (한글 그대로)
+    // S3에 저장된 실제 파일명
+    // 한글 파일명은 AWS SDK가 자동으로 URL 인코딩 처리
     const imageKey = `uploads/성산${index}.jpeg`;
     
     // Presigned URL 생성 (24시간 유효)
@@ -90,8 +89,6 @@ async function getSeongsanImageUrl(index) {
       Key: imageKey
     });
     
-    // URI 인코딩 옵션을 명시적으로 설정하지 않으면 AWS SDK가 자동 처리
-    // 하지만 실제 파일명과 정확히 일치해야 함
     const url = await getSignedUrl(s3Client, command, { 
       expiresIn: 86400 
     });
@@ -820,6 +817,37 @@ app.delete('/api/s3/delete/:key(*)', async (req, res) => {
     });
   } catch (error) {
     console.error('S3 delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// S3 uploads 폴더의 파일 목록 조회 (디버깅용)
+app.get('/api/s3/debug/uploads', async (req, res) => {
+  try {
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    const command = new ListObjectsV2Command({
+      Bucket: S3_BUCKET_NAME,
+      Prefix: 'uploads/성산'
+    });
+
+    const response = await s3Client.send(command);
+    
+    const files = (response.Contents || []).map(item => ({
+      key: item.Key,
+      size: item.Size,
+      lastModified: item.LastModified,
+      urlEncoded: encodeURIComponent(item.Key)
+    }));
+
+    res.json({
+      files: files,
+      count: files.length
+    });
+  } catch (error) {
+    console.error('S3 list error:', error);
     res.status(500).json({ error: error.message });
   }
 });
