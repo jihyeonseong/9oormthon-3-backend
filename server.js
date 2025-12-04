@@ -105,10 +105,10 @@ async function getSeongsanImageList() {
   }
 }
 
-// S3 이미지 Public URL 생성 함수
+// S3 이미지 Presigned URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
-// Public 버킷이므로 S3 API 호출 없이 직접 파일명으로 URL 생성
-function getSeongsanImageUrl(index) {
+// Private 버킷이므로 Presigned URL 사용
+async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
     return null;
   }
@@ -118,16 +118,28 @@ function getSeongsanImageUrl(index) {
     return null;
   }
   
-  // Public S3 URL 직접 생성 (S3 API 호출 불필요)
-  const region = process.env.AWS_REGION || 'ap-northeast-2';
-  const fileName = `성산${index}.jpeg`;
-  const imageKey = `uploads/${fileName}`;
-  
-  // 파일명의 각 경로 세그먼트를 URL 인코딩
-  const encodedKey = imageKey.split('/').map(segment => encodeURIComponent(segment)).join('/');
-  const url = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${encodedKey}`;
-  
-  return url;
+  try {
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    
+    // S3 파일명
+    const fileName = `성산${index}.jpeg`;
+    const imageKey = `uploads/${fileName}`;
+    
+    // Presigned URL 생성 (24시간 유효)
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: imageKey
+    });
+    
+    const url = await getSignedUrl(s3Client, command, { 
+      expiresIn: 86400 
+    });
+    
+    return url;
+  } catch (error) {
+    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error);
+    return null;
+  }
 }
 
 // Multer 설정 (메모리 스토리지 - 파일을 메모리에 저장)
@@ -604,7 +616,7 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     const translatedRows = await Promise.all(
       rows.map(async (row, index) => {
         // questId와 관계없이 순서대로 성산0, 성산1, 성산2 이미지 불러오기
-        const imageUrl = getSeongsanImageUrl(index);
+        const imageUrl = await getSeongsanImageUrl(index);
         
         console.log(`[퀘스트 조회] index ${index}, quest_id ${row.quest_id}, 이미지 URL: ${imageUrl ? '생성됨' : '없음'}`);
         
