@@ -512,46 +512,58 @@ app.get('/api/bus/arrival', async (req, res) => {
       busApiUrl += `?station_id=${station_id}`;
     }
     
-    // Node.js 18+에서는 fetch가 내장되어 있음
-    // 없으면 node-fetch 패키지 필요
-    let fetch;
-    try {
-      // Node.js 18+ 내장 fetch 사용
-      fetch = globalThis.fetch || require('node-fetch');
-    } catch (e) {
-      // node-fetch가 없으면 https 모듈 사용
-      const https = require('https');
-      fetch = (url) => {
-        return new Promise((resolve, reject) => {
-          https.get(url, (response) => {
-            let data = '';
-            response.on('data', (chunk) => { data += chunk; });
-            response.on('end', () => {
-              try {
-                resolve({
-                  ok: response.statusCode === 200,
-                  status: response.statusCode,
-                  json: () => Promise.resolve(JSON.parse(data))
-                });
-              } catch (e) {
-                reject(new Error('Failed to parse JSON'));
-              }
-            });
-          }).on('error', reject);
-        });
+    // https 모듈을 사용하여 외부 API 호출 (SSL 인증서 문제 해결)
+    const https = require('https');
+    const { URL } = require('url');
+    
+    const parsedUrl = new URL(busApiUrl);
+    
+    const data = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: parsedUrl.hostname,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Node.js)',
+          'Accept': 'application/json'
+        },
+        // SSL 인증서 검증 우회 (일부 외부 API에서 필요)
+        rejectUnauthorized: false
       };
-    }
-    
-    const response = await fetch(busApiUrl);
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'Failed to fetch bus data',
-        status: response.status 
+      
+      const req = https.request(options, (response) => {
+        let responseData = '';
+        
+        response.on('data', (chunk) => {
+          responseData += chunk;
+        });
+        
+        response.on('end', () => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`HTTP ${response.statusCode}: ${responseData}`));
+            return;
+          }
+          
+          try {
+            const jsonData = JSON.parse(responseData);
+            resolve(jsonData);
+          } catch (e) {
+            reject(new Error('Failed to parse JSON: ' + e.message));
+          }
+        });
       });
-    }
-    
-    const data = await response.json();
+      
+      req.on('error', (error) => {
+        reject(new Error('Request failed: ' + error.message));
+      });
+      
+      req.setTimeout(10000, () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+      
+      req.end();
+    });
     
     res.json({
       success: true,
