@@ -108,36 +108,50 @@ async function getSeongsanImageList() {
 // S3 이미지 Presigned URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
 // Private 버킷이므로 Presigned URL 사용
+// 실제 S3에 저장된 파일명을 사용하여 정확한 URL 생성
 async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
+    console.warn(`[getSeongsanImageUrl] S3_BUCKET_NAME is not set`);
     return null;
   }
   
   // 성산0, 성산1, 성산2만 (index 0, 1, 2만)
   if (index < 0 || index > 2) {
+    console.warn(`[getSeongsanImageUrl] Invalid index: ${index}`);
     return null;
   }
   
   try {
     const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     
-    // S3 파일명
-    const fileName = `성산${index}.jpeg`;
-    const imageKey = `uploads/${fileName}`;
+    // 실제 S3에 저장된 파일 목록에서 정확한 파일명 가져오기
+    const files = await getSeongsanImageList();
+    console.log(`[getSeongsanImageUrl] Found ${files.length} files for index ${index}:`, files);
+    
+    // index에 해당하는 파일 찾기
+    if (index >= files.length) {
+      console.warn(`[getSeongsanImageUrl] Index ${index} is out of range (files.length: ${files.length})`);
+      return null;
+    }
+    
+    const actualKey = files[index];
+    console.log(`[getSeongsanImageUrl] Using actual S3 key for index ${index}: ${actualKey}`);
     
     // Presigned URL 생성 (24시간 유효)
+    // 실제 S3 파일명을 사용하여 정확한 URL 생성
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
-      Key: imageKey
+      Key: actualKey // 실제 S3에 저장된 파일명 사용
     });
     
     const url = await getSignedUrl(s3Client, command, { 
       expiresIn: 86400 
     });
     
+    console.log(`[getSeongsanImageUrl] Successfully generated Presigned URL for index ${index}`);
     return url;
   } catch (error) {
-    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error);
+    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error.message, error.stack);
     return null;
   }
 }
