@@ -1164,10 +1164,60 @@ async function initializeHongHistory() {
   }
 }
 
+// 사진 미션 데이터 초기화 함수
+async function initializePhotoMissions() {
+  try {
+    const photoMissions = [
+      // City 레벨
+      { city: 'Jeju', town: null, village: null, question: '동문시장 등 제주시 일상 풍경이 느껴지는 활기찬 순간을 찍어주세요.' },
+      { city: 'Seogwipo', town: null, village: null, question: '폭포와 바다가 함께 보이는 서귀포 특유의 여유로운 풍경을 담아주세요.' },
+      // Town 레벨
+      { city: 'Jeju', town: 'Aewol', village: null, question: '애월 카페거리에서 바다 감성이 드러나는 장면을 촬영해주세요.' },
+      { city: 'Jeju', town: 'Gujwa', village: null, question: '세화 주변에서 청년·예술 분위기가 느껴지는 힙한 공간을 찍어주세요.' },
+      { city: 'Seogwipo', town: 'Seogwi', village: null, question: '이중섭 거리에서 예술적 감성이 묻어나는 장소를 사진으로 남겨주세요.' },
+      { city: 'Seogwipo', town: 'Seongsan', village: null, question: '성산일출봉이 독특한 각도로 보이는 숨은 포인트를 촬영해주세요.' },
+      // Village 레벨
+      { city: 'Jeju', town: 'Aewol', village: 'Woljeong', question: '월정리 바다의 청량한 색감이 가장 잘 드러나는 장소를 찍어주세요.' },
+      { city: 'Jeju', town: 'Gujwa', village: 'Sehwa', question: '세화오일장 주변에서 로컬의 일상과 예술이 어우러진 순간을 촬영해주세요.' },
+      { city: 'Seogwipo', town: 'Seongsan', village: 'Seongsan', question: '성산리 골목 속에서 생활 풍경과 성산일출봉이 함께 보이는 장면을 담아주세요.' }
+    ];
+
+    for (const mission of photoMissions) {
+      try {
+        // 중복 체크 (question과 option_a로 확인)
+        const [existing] = await pool.execute(
+          `SELECT id FROM quests 
+           WHERE city = ? AND COALESCE(town, '') = COALESCE(?, '') 
+           AND COALESCE(village, '') = COALESCE(?, '') 
+           AND option_a = ? AND question = ?`,
+          [mission.city, mission.town || '', mission.village || '', '사진 미션', mission.question]
+        );
+
+        if (existing.length === 0) {
+          await pool.execute(
+            `INSERT INTO quests (city, town, village, question, option_a, option_b, option_c, option_d, correct_answer, score)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [mission.city, mission.town, mission.village, mission.question, '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1]
+          );
+          console.log(`[사진 미션 초기화] ${mission.city}${mission.town ? ' ' + mission.town : ''}${mission.village ? ' ' + mission.village : ''} 추가 완료`);
+        } else {
+          console.log(`[사진 미션 초기화] ${mission.city}${mission.town ? ' ' + mission.town : ''}${mission.village ? ' ' + mission.village : ''} 이미 존재함`);
+        }
+      } catch (error) {
+        console.error(`[사진 미션 초기화] ${mission.city}${mission.town ? ' ' + mission.town : ''}${mission.village ? ' ' + mission.village : ''} 추가 실패:`, error.message);
+      }
+    }
+    console.log('[사진 미션 초기화] 완료');
+  } catch (error) {
+    console.error('[사진 미션 초기화] 실패:', error.message);
+  }
+}
+
 // 서버 시작 시 테이블 초기화 및 초기 데이터 삽입
 (async () => {
   await initializeUploadHistoryTable();
   await initializeHongHistory();
+  await initializePhotoMissions();
 })();
 
 const PORT = process.env.PORT || 8080;
