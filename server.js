@@ -13,6 +13,7 @@ const pool = mysql.createPool({
   user: process.env.DB_USER || 'myuser',
   password: process.env.DB_PASSWORD || 'mypass123',
   database: process.env.DB_NAME || 'mydb',
+  charset: 'utf8mb4', // UTF-8 완전 지원 (이모지 포함)
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
