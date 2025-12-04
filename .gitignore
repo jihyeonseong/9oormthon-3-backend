@@ -5,3 +5,7 @@ yarn-error.log*
 .env
 .DS_Store
 
+# Local secret files (not committed to git)
+k8s/**/*.local.env
+k8s/**/*.local.yaml
+
