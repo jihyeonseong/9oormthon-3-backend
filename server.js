@@ -35,6 +35,35 @@ const s3Client = new S3Client({
 
 const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || '';
 
+// 지역명 영어->한국어 변환 맵
+const regionNameMap = {
+  // City (시/도)
+  'Jeju': '제주시',
+  'Seogwipo': '서귀포시',
+  // Town (읍/면/동)
+  'Aewol': '애월읍',
+  'Gujwa': '구좌읍',
+  'Seogwi': '서귀동',
+  'Seongsan': '성산읍', // town인 경우
+  // Village (리/동)
+  'Woljeong': '월정리',
+  'Sehwa': '세화리'
+};
+
+// 지역명 변환 함수
+// type: 'city' | 'town' | 'village'
+function translateRegionName(englishName, type = null) {
+  if (!englishName) return englishName;
+  
+  // Seongsan은 타입에 따라 다르게 변환
+  if (englishName === 'Seongsan') {
+    if (type === 'village') return '성산리';
+    return '성산읍'; // town인 경우
+  }
+  
+  return regionNameMap[englishName] || englishName;
+}
+
 // Multer 설정 (메모리 스토리지 - 파일을 메모리에 저장)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -492,7 +521,15 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
       [user_id]
     );
     
-    res.json(rows);
+    // 지역명을 한국어로 변환
+    const translatedRows = rows.map(row => ({
+      ...row,
+      '시': translateRegionName(row['시'], 'city'),
+      '동': row['동'] ? translateRegionName(row['동'], 'town') : row['동'],
+      '리': row['리'] ? translateRegionName(row['리'], 'village') : row['리']
+    }));
+    
+    res.json(translatedRows);
   } catch (error) {
     console.error('Error fetching user quests:', error);
     res.status(500).json({ error: error.message });
