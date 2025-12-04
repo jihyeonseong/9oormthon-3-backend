@@ -67,10 +67,14 @@ function translateRegionName(englishName, type = null) {
 // S3 이미지 Presigned URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
 async function getSeongsanImageUrl(index) {
-  if (!S3_BUCKET_NAME) return null;
+  if (!S3_BUCKET_NAME) {
+    console.log(`[이미지] S3_BUCKET_NAME이 설정되지 않음`);
+    return null;
+  }
   
   // 성산0, 성산1, 성산2만 (index 0, 1, 2만)
   if (index < 0 || index > 2) {
+    console.log(`[이미지] index ${index}는 범위를 벗어남 (0-2만 허용)`);
     return null;
   }
   
@@ -79,6 +83,7 @@ async function getSeongsanImageUrl(index) {
     
     // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg 파일명
     const imageKey = `uploads/성산${index}.jpeg`;
+    console.log(`[이미지] S3에서 이미지 찾기 시도: ${imageKey}`);
     
     try {
       const command = new GetObjectCommand({
@@ -88,13 +93,16 @@ async function getSeongsanImageUrl(index) {
       
       // Presigned URL 생성 (24시간 유효)
       const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+      console.log(`[이미지] 성공: ${imageKey} → URL 생성됨`);
       return url;
     } catch (err) {
       // 이미지가 없으면 null 반환
+      console.log(`[이미지] 실패: ${imageKey} - ${err.message}`);
       return null;
     }
   } catch (error) {
     // 이미지가 없거나 오류 발생 시 null 반환
+    console.error(`[이미지] 오류: ${error.message}`);
     return null;
   }
 }
@@ -535,7 +543,17 @@ app.get('/api/users/:user_id/score', async (req, res) => {
 // 사용자별 퀘스트 기록 조회 (user_id로 조회)
 app.get('/api/users/:user_id/quests', async (req, res) => {
   try {
-    const { user_id } = req.params;
+    let { user_id } = req.params;
+    
+    // URL 디코딩 처리 (한글 user_id 지원)
+    try {
+      user_id = decodeURIComponent(user_id);
+    } catch (e) {
+      // 디코딩 실패 시 원본 사용
+      console.warn('Failed to decode user_id:', user_id);
+    }
+    
+    console.log(`[퀘스트 조회] user_id: ${user_id}`);
     
     const [rows] = await pool.execute(
       `SELECT 
@@ -556,12 +574,16 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
       [user_id]
     );
     
+    console.log(`[퀘스트 조회] 조회된 퀘스트 수: ${rows.length}개`);
+    
     // 지역명을 한국어로 변환하고 이미지 URL 추가
     // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 순서대로 불러오기
     const translatedRows = await Promise.all(
       rows.map(async (row, index) => {
         // questId와 관계없이 순서대로 성산0, 성산1, 성산2 이미지 불러오기
         const imageUrl = await getSeongsanImageUrl(index);
+        
+        console.log(`[퀘스트 조회] index ${index}, quest_id ${row.quest_id}, 이미지 URL: ${imageUrl ? '생성됨' : '없음'}`);
         
         return {
           ...row,
@@ -573,6 +595,7 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
       })
     );
     
+    console.log(`[퀘스트 조회] 최종 반환: ${translatedRows.length}개`);
     res.json(translatedRows);
   } catch (error) {
     console.error('Error fetching user quests:', error);
