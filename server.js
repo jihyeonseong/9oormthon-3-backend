@@ -80,10 +80,11 @@ async function getSeongsanImageUrl(index) {
     const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     
     // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg 파일명
+    // S3에 저장된 실제 파일명과 일치해야 함
     const imageKey = `uploads/성산${index}.jpeg`;
     
     // Presigned URL 생성 (24시간 유효)
-    // 파일이 없어도 URL은 생성되지만, 접근 시 404 발생
+    // AWS SDK가 자동으로 URL 인코딩 처리
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: imageKey
