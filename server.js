@@ -435,6 +435,7 @@ app.get('/api/quests/random', async (req, res) => {
         },
         instruction: `이 지역의 아름다운 풍경을 사진으로 찍어주세요!`,
         locationHint: quest.question, // 문제 질문을 장소 힌트로 사용
+        options: {}, // 사진 찍는 퀘스트는 선택지 없음 (프론트엔드 호환성을 위해 빈 객체)
         score: quest.score
       });
     } else {
