@@ -64,6 +64,41 @@ function translateRegionName(englishName, type = null) {
   return regionNameMap[englishName] || englishName;
 }
 
+// S3 이미지 Presigned URL 생성 함수
+// 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
+async function getSeongsanImageUrl(index) {
+  if (!S3_BUCKET_NAME) return null;
+  
+  // 성산0, 성산1, 성산2만 (index 0, 1, 2만)
+  if (index < 0 || index > 2) {
+    return null;
+  }
+  
+  try {
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    
+    // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg 파일명
+    const imageKey = `uploads/성산${index}.jpeg`;
+    
+    try {
+      const command = new GetObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: imageKey
+      });
+      
+      // Presigned URL 생성 (24시간 유효)
+      const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+      return url;
+    } catch (err) {
+      // 이미지가 없으면 null 반환
+      return null;
+    }
+  } catch (error) {
+    // 이미지가 없거나 오류 발생 시 null 반환
+    return null;
+  }
+}
+
 // Multer 설정 (메모리 스토리지 - 파일을 메모리에 저장)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -521,13 +556,22 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
       [user_id]
     );
     
-    // 지역명을 한국어로 변환
-    const translatedRows = rows.map(row => ({
-      ...row,
-      '시': translateRegionName(row['시'], 'city'),
-      '동': row['동'] ? translateRegionName(row['동'], 'town') : row['동'],
-      '리': row['리'] ? translateRegionName(row['리'], 'village') : row['리']
-    }));
+    // 지역명을 한국어로 변환하고 이미지 URL 추가
+    // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 순서대로 불러오기
+    const translatedRows = await Promise.all(
+      rows.map(async (row, index) => {
+        // questId와 관계없이 순서대로 성산0, 성산1, 성산2 이미지 불러오기
+        const imageUrl = await getSeongsanImageUrl(index);
+        
+        return {
+          ...row,
+          '시': translateRegionName(row['시'], 'city'),
+          '동': row['동'] ? translateRegionName(row['동'], 'town') : row['동'],
+          '리': row['리'] ? translateRegionName(row['리'], 'village') : row['리'],
+          '이미지 URL': imageUrl || null
+        };
+      })
+    );
     
     res.json(translatedRows);
   } catch (error) {
@@ -614,6 +658,53 @@ app.get('/api/bus/arrival', async (req, res) => {
 });
 
 // ==================== AWS S3 API ====================
+
+// 퀘스트 이미지 업로드 (POST /api/quests/:id/image)
+// uploads 폴더에 저장: uploads/{quest_id}.{ext}
+app.post('/api/quests/:id/image', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    // 파일 확장자 추출
+    const originalName = req.file.originalname;
+    const fileExtension = originalName.split('.').pop().toLowerCase() || 'jpg';
+    
+    // uploads 폴더에 저장: uploads/{quest_id}.{ext}
+    const imageKey = `uploads/${id}.${fileExtension}`;
+
+    const command = new PutObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: imageKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype
+    });
+
+    await s3Client.send(command);
+
+    // S3 URL 생성 (리전별 엔드포인트)
+    const region = process.env.AWS_REGION || 'ap-northeast-2';
+    const fileUrl = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${imageKey}`;
+
+    res.json({
+      success: true,
+      questId: id,
+      imageKey: imageKey,
+      url: fileUrl,
+      size: req.file.size
+    });
+  } catch (error) {
+    console.error('Quest image upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 파일 업로드 (POST /api/s3/upload)
 app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
