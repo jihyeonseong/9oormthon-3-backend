@@ -13,4 +13,6 @@ configMapGenerator:
 - name: sql-init-script
   files:
   # Used for one-time DB init via /docker-entrypoint-initdb.d
+  # MySQL은 /docker-entrypoint-initdb.d의 모든 .sql 파일을 알파벳 순서로 실행
   - init.sql=init.sql # format: <key>=<relative repo path>
+  - quest-data.sql=quest-data.sql # 퀘스트 문제 데이터 테이블 생성
