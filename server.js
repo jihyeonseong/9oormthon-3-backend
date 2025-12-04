@@ -1,6 +1,8 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const multer = require('multer');
 
 const app = express();
 app.use(cors());
@@ -17,6 +19,25 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
+});
+
+// AWS S3 클라이언트 초기화
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'ap-northeast-2',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+  }
+});
+
+const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || '';
+
+// Multer 설정 (메모리 스토리지 - 파일을 메모리에 저장)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB 제한
+  }
 });
 
 // Health check
@@ -475,10 +496,110 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
   }
 });
 
+// ==================== AWS S3 API ====================
+
+// 파일 업로드 (POST /api/s3/upload)
+app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    const fileName = req.body.fileName || `${Date.now()}-${req.file.originalname}`;
+    const folder = req.body.folder || 'uploads';
+
+    const key = `${folder}/${fileName}`;
+
+    const command = new PutObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: key,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ACL: 'public-read' // 또는 'private'로 설정
+    });
+
+    await s3Client.send(command);
+
+    // S3 URL 생성
+    const fileUrl = `https://${S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'ap-northeast-2'}.amazonaws.com/${key}`;
+
+    res.json({
+      success: true,
+      fileName: fileName,
+      key: key,
+      url: fileUrl,
+      size: req.file.size
+    });
+  } catch (error) {
+    console.error('S3 upload error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 파일 다운로드 URL 생성 (GET /api/s3/download/:key)
+app.get('/api/s3/download/:key(*)', async (req, res) => {
+  try {
+    const key = req.params.key;
+
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    // Presigned URL 생성 (임시 다운로드 URL)
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: key
+    });
+
+    const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1시간 유효
+
+    res.json({
+      url: url,
+      expiresIn: 3600
+    });
+  } catch (error) {
+    console.error('S3 download URL error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 파일 삭제 (DELETE /api/s3/delete/:key)
+app.delete('/api/s3/delete/:key(*)', async (req, res) => {
+  try {
+    const key = req.params.key;
+
+    if (!S3_BUCKET_NAME) {
+      return res.status(500).json({ error: 'S3 bucket not configured' });
+    }
+
+    const command = new DeleteObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: key
+    });
+
+    await s3Client.send(command);
+
+    res.json({
+      success: true,
+      message: 'File deleted successfully',
+      key: key
+    });
+  } catch (error) {
+    console.error('S3 delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`DB_HOST: ${process.env.DB_HOST || 'mysql'}`);
   console.log(`DB_NAME: ${process.env.DB_NAME || 'mydb'}`);
+  console.log(`S3_BUCKET: ${S3_BUCKET_NAME || 'Not configured'}`);
 });
 

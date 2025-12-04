@@ -20,6 +20,8 @@ spec:
         envFrom:
         - secretRef:
             name: mysql-connection-secret
+        - secretRef:
+            name: aws-s3-secret
         volumeMounts:
         - name: config-volume
           mountPath: /app/config
