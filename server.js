@@ -107,8 +107,8 @@ async function getSeongsanImageList() {
 
 // S3 이미지 Public URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
-// Public 버킷이므로 Presigned URL 대신 직접 public URL 사용
-async function getSeongsanImageUrl(index) {
+// Public 버킷이므로 S3 API 호출 없이 직접 파일명으로 URL 생성
+function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
     return null;
   }
@@ -118,28 +118,16 @@ async function getSeongsanImageUrl(index) {
     return null;
   }
   
-  try {
-    // 캐시된 파일 목록에서 정확한 파일명 가져오기
-    const files = await getSeongsanImageList();
-    
-    // index에 해당하는 파일 찾기
-    if (index >= files.length) {
-      return null;
-    }
-    
-    const actualKey = files[index];
-    
-    // Public S3 URL 생성 (버킷이 public이므로 Presigned URL 불필요)
-    const region = process.env.AWS_REGION || 'ap-northeast-2';
-    // 파일명의 각 경로 세그먼트를 URL 인코딩
-    const encodedKey = actualKey.split('/').map(segment => encodeURIComponent(segment)).join('/');
-    const url = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${encodedKey}`;
-    
-    return url;
-  } catch (error) {
-    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error);
-    return null;
-  }
+  // Public S3 URL 직접 생성 (S3 API 호출 불필요)
+  const region = process.env.AWS_REGION || 'ap-northeast-2';
+  const fileName = `성산${index}.jpeg`;
+  const imageKey = `uploads/${fileName}`;
+  
+  // 파일명의 각 경로 세그먼트를 URL 인코딩
+  const encodedKey = imageKey.split('/').map(segment => encodeURIComponent(segment)).join('/');
+  const url = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${encodedKey}`;
+  
+  return url;
 }
 
 // Multer 설정 (메모리 스토리지 - 파일을 메모리에 저장)
@@ -616,7 +604,7 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     const translatedRows = await Promise.all(
       rows.map(async (row, index) => {
         // questId와 관계없이 순서대로 성산0, 성산1, 성산2 이미지 불러오기
-        const imageUrl = await getSeongsanImageUrl(index);
+        const imageUrl = getSeongsanImageUrl(index);
         
         console.log(`[퀘스트 조회] index ${index}, quest_id ${row.quest_id}, 이미지 URL: ${imageUrl ? '생성됨' : '없음'}`);
         
