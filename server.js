@@ -460,23 +460,23 @@ app.get('/api/quests/random', async (req, res) => {
       console.log(`[랜덤 퀘스트] Fallback 쿼리: ${query}`, params);
       
       [rows] = await pool.execute(query, params);
-      
-      if (rows.length === 0) {
-        const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
-        return res.status(404).json({ 
-          error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
-          availableCities: availableCities.map(r => r.city),
-          receivedParams: { city, town, village }
-        });
-      }
-      
+    
+    if (rows.length === 0) {
+      const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
+      return res.status(404).json({ 
+        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
+        availableCities: availableCities.map(r => r.city),
+        receivedParams: { city, town, village }
+      });
+    }
+    
       // fallback 타입으로 변경
       const finalType = fallbackType;
-      const quest = rows[0];
+    const quest = rows[0];
       console.log(`[랜덤 퀘스트] Fallback quest ID: ${quest.id}, 타입: ${finalType}`);
-      
+    
       if (finalType === 'photo') {
-        res.json({
+    res.json({
           type: 'photo',
           id: quest.id,
           region: {
@@ -493,19 +493,19 @@ app.get('/api/quests/random', async (req, res) => {
       } else {
         res.json({
           type: 'question',
-          id: quest.id,
-          region: {
-            city: quest.city,
-            town: quest.town,
-            village: quest.village
-          },
-          question: quest.question,
-          options: {
-            A: quest.option_a,
-            B: quest.option_b,
-            C: quest.option_c,
-            D: quest.option_d
-          },
+      id: quest.id,
+      region: {
+        city: quest.city,
+        town: quest.town,
+        village: quest.village
+      },
+      question: quest.question,
+      options: {
+        A: quest.option_a,
+        B: quest.option_b,
+        C: quest.option_c,
+        D: quest.option_d
+      },
           score: quest.score
         });
       }
@@ -747,11 +747,12 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     );
     
     // 각 quest_id에 대해 user_upload_history에서 이미지 URL 조회
-    // quest_id 컬럼이 없을 수 있으므로 서브쿼리로 별도 조회
+    // 업로드된 이미지가 없으면 기본 이미지(seongsan0, seongsan1, seongsan2) 사용
     const rowsWithImages = await Promise.all(
-      rows.map(async (row) => {
+      rows.map(async (row, index) => {
         let imageUrl = null;
         
+        // 1. 먼저 업로드된 이미지 조회 시도
         if (row.quest_id) {
           try {
             // quest_id로 업로드 히스토리 조회 (quest_id 컬럼이 있으면 사용, 없으면 다른 방법)
@@ -785,6 +786,11 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
               console.warn(`[퀘스트 조회] fallback 이미지 조회 실패: ${fallbackError.message}`);
             }
           }
+        }
+        
+        // 2. 업로드된 이미지가 없으면 기본 이미지 사용 (seongsan0, seongsan1, seongsan2)
+        if (!imageUrl && index < 3) {
+          imageUrl = await getSeongsanImageUrl(index);
         }
         
         return {
