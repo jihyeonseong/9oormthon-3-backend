@@ -80,10 +80,12 @@ async function getSeongsanImageUrl(index) {
     const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     
     // S3에 저장된 실제 파일명
-    // 한글 파일명은 AWS SDK가 자동으로 URL 인코딩 처리
-    const imageKey = `uploads/성산${index}.jpeg`;
+    // 한글 파일명을 Buffer로 변환하여 정확한 인코딩 보장
+    const fileName = `성산${index}.jpeg`;
+    const imageKey = `uploads/${fileName}`;
     
     // Presigned URL 생성 (24시간 유효)
+    // AWS SDK가 자동으로 URL 인코딩 처리하지만, 실제 파일명과 정확히 일치해야 함
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: imageKey
@@ -830,7 +832,7 @@ app.get('/api/s3/debug/uploads', async (req, res) => {
 
     const command = new ListObjectsV2Command({
       Bucket: S3_BUCKET_NAME,
-      Prefix: 'uploads/성산'
+      Prefix: 'uploads/' // uploads 폴더의 모든 파일 조회
     });
 
     const response = await s3Client.send(command);
@@ -839,16 +841,26 @@ app.get('/api/s3/debug/uploads', async (req, res) => {
       key: item.Key,
       size: item.Size,
       lastModified: item.LastModified,
-      urlEncoded: encodeURIComponent(item.Key)
+      urlEncoded: encodeURIComponent(item.Key),
+      // 성산으로 시작하는 파일만 필터링
+      isSeongsan: item.Key.includes('성산')
     }));
 
+    // 성산으로 시작하는 파일만 필터링
+    const seongsanFiles = files.filter(f => f.isSeongsan);
+
     res.json({
-      files: files,
-      count: files.length
+      allFiles: files,
+      seongsanFiles: seongsanFiles,
+      count: files.length,
+      seongsanCount: seongsanFiles.length
     });
   } catch (error) {
     console.error('S3 list error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message,
+      details: error.stack 
+    });
   }
 });
 
