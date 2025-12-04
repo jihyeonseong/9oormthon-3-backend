@@ -394,27 +394,11 @@ app.get('/api/quests/random', async (req, res) => {
     console.log(`[랜덤 퀘스트] 선택된 타입: ${questType}`);
     
     // 선택된 타입에 맞는 quest 조회
-    // 더 유연한 매칭: 정확한 매칭을 우선하되, 상위 레벨 quest도 포함
+    // 1단계: 타입 필터링
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
-    // town 조건: 정확히 일치하거나 NULL인 경우
-    if (town) {
-      query += ' AND (town = ? OR town IS NULL)';
-      params.push(town);
-    } else {
-      query += ' AND town IS NULL';
-    }
-    
-    // village 조건: 정확히 일치하거나 NULL인 경우
-    if (village) {
-      query += ' AND (village = ? OR village IS NULL)';
-      params.push(village);
-    } else {
-      query += ' AND village IS NULL';
-    }
-    
-    // 타입에 따라 필터링
+    // 타입에 따라 필터링 (먼저 타입으로 필터링)
     if (questType === 'photo') {
       query += ' AND option_a = ?';
       params.push('사진 미션');
@@ -423,16 +407,19 @@ app.get('/api/quests/random', async (req, res) => {
       params.push('사진 미션');
     }
     
-    // 정확한 매칭 우선 (village가 있으면 village 레벨 우선, 없으면 town 레벨 우선)
-    if (village) {
-      query += ' ORDER BY CASE WHEN village = ? THEN 1 WHEN town = ? THEN 2 ELSE 3 END, RAND() LIMIT 1';
-      params.push(village, town || '');
-    } else if (town) {
-      query += ' ORDER BY CASE WHEN town = ? THEN 1 ELSE 2 END, RAND() LIMIT 1';
+    // 2단계: 지역 조건 추가 (town/village가 제공되면 정확히 일치하는 것만, 없으면 모든 것 포함)
+    if (town) {
+      query += ' AND town = ?';
       params.push(town);
-    } else {
-      query += ' ORDER BY RAND() LIMIT 1';
     }
+    
+    if (village) {
+      query += ' AND village = ?';
+      params.push(village);
+    }
+    
+    // 3단계: 랜덤 선택
+    query += ' ORDER BY RAND() LIMIT 1';
     
     console.log(`[랜덤 퀘스트] 쿼리: ${query}`, params);
     
@@ -443,24 +430,11 @@ app.get('/api/quests/random', async (req, res) => {
       console.log(`[랜덤 퀘스트] ${questType} 타입 quest를 찾을 수 없어 반대 타입으로 fallback`);
       const fallbackType = questType === 'photo' ? 'question' : 'photo';
       
+      // Fallback: 반대 타입의 quest 조회
       query = 'SELECT * FROM quests WHERE city = ?';
       params = [city];
       
-      // 더 유연한 매칭
-      if (town) {
-        query += ' AND (town = ? OR town IS NULL)';
-        params.push(town);
-      } else {
-        query += ' AND town IS NULL';
-      }
-      
-      if (village) {
-        query += ' AND (village = ? OR village IS NULL)';
-        params.push(village);
-      } else {
-        query += ' AND village IS NULL';
-      }
-      
+      // 타입 필터링
       if (fallbackType === 'photo') {
         query += ' AND option_a = ?';
         params.push('사진 미션');
@@ -469,16 +443,19 @@ app.get('/api/quests/random', async (req, res) => {
         params.push('사진 미션');
       }
       
-      // 정확한 매칭 우선
-      if (village) {
-        query += ' ORDER BY CASE WHEN village = ? THEN 1 WHEN town = ? THEN 2 ELSE 3 END, RAND() LIMIT 1';
-        params.push(village, town || '');
-      } else if (town) {
-        query += ' ORDER BY CASE WHEN town = ? THEN 1 ELSE 2 END, RAND() LIMIT 1';
+      // 지역 조건
+      if (town) {
+        query += ' AND town = ?';
         params.push(town);
-      } else {
-        query += ' ORDER BY RAND() LIMIT 1';
       }
+      
+      if (village) {
+        query += ' AND village = ?';
+        params.push(village);
+      }
+      
+      // 랜덤 선택
+      query += ' ORDER BY RAND() LIMIT 1';
       
       console.log(`[랜덤 퀘스트] Fallback 쿼리: ${query}`, params);
       
