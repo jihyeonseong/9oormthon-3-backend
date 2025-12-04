@@ -1,7 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 
 const app = express();
@@ -68,13 +68,11 @@ function translateRegionName(englishName, type = null) {
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
 async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
-    console.log(`[이미지] S3_BUCKET_NAME이 설정되지 않음`);
     return null;
   }
   
   // 성산0, 성산1, 성산2만 (index 0, 1, 2만)
   if (index < 0 || index > 2) {
-    console.log(`[이미지] index ${index}는 범위를 벗어남 (0-2만 허용)`);
     return null;
   }
   
@@ -83,26 +81,30 @@ async function getSeongsanImageUrl(index) {
     
     // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg 파일명
     const imageKey = `uploads/성산${index}.jpeg`;
-    console.log(`[이미지] S3에서 이미지 찾기 시도: ${imageKey}`);
     
+    // 먼저 파일이 존재하는지 확인
     try {
-      const command = new GetObjectCommand({
+      const headCommand = new HeadObjectCommand({
         Bucket: S3_BUCKET_NAME,
         Key: imageKey
       });
-      
-      // Presigned URL 생성 (24시간 유효)
-      const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
-      console.log(`[이미지] 성공: ${imageKey} → URL 생성됨`);
-      return url;
-    } catch (err) {
-      // 이미지가 없으면 null 반환
-      console.log(`[이미지] 실패: ${imageKey} - ${err.message}`);
+      await s3Client.send(headCommand);
+    } catch (headErr) {
+      // 파일이 존재하지 않으면 null 반환
       return null;
     }
+    
+    // 파일이 존재하면 Presigned URL 생성
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: imageKey
+    });
+    
+    // Presigned URL 생성 (24시간 유효)
+    const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+    return url;
   } catch (error) {
-    // 이미지가 없거나 오류 발생 시 null 반환
-    console.error(`[이미지] 오류: ${error.message}`);
+    // 오류 발생 시 null 반환
     return null;
   }
 }
