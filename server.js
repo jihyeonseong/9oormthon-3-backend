@@ -28,9 +28,9 @@ const s3Client = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
   },
-  // 리전별 엔드포인트 자동 설정
-  forcePathStyle: false, // virtual-hosted-style 사용 (기본값)
-  // endpoint는 자동으로 리전에 맞게 설정됨
+  // 리전별 엔드포인트 명시적 설정
+  endpoint: `https://s3.${process.env.AWS_REGION || 'ap-northeast-2'}.amazonaws.com`,
+  forcePathStyle: false // virtual-hosted-style 사용
 });
 
 const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || '';
