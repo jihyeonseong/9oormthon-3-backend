@@ -82,25 +82,13 @@ async function getSeongsanImageUrl(index) {
     // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg 파일명
     const imageKey = `uploads/성산${index}.jpeg`;
     
-    // 먼저 파일이 존재하는지 확인
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: S3_BUCKET_NAME,
-        Key: imageKey
-      });
-      await s3Client.send(headCommand);
-    } catch (headErr) {
-      // 파일이 존재하지 않으면 null 반환
-      return null;
-    }
-    
-    // 파일이 존재하면 Presigned URL 생성
+    // Presigned URL 생성 (24시간 유효)
+    // 파일이 없어도 URL은 생성되지만, 접근 시 404 발생
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: imageKey
     });
     
-    // Presigned URL 생성 (24시간 유효)
     const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
     return url;
   } catch (error) {
