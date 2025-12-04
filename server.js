@@ -389,47 +389,46 @@ app.get('/api/quests/random', async (req, res) => {
     
     console.log('Quest search params (processed):', { city, town, village });
     
-    // 랜덤하게 퀘스트 타입 선택 (50:50 확률)
-    const questType = Math.random() < 0.5 ? 'photo' : 'question';
-    console.log(`[랜덤 퀘스트] 선택된 타입: ${questType}`);
-    
-    // 타입에 따라 적절한 quest 조회
+    // 랜덤으로 quest 하나 선택 (타입 구분 없이)
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
+    // town과 village 조건 추가 (NULL 값 처리)
     if (town) {
       query += ' AND town = ?';
       params.push(town);
+    } else {
+      query += ' AND town IS NULL';
     }
     
     if (village) {
       query += ' AND village = ?';
       params.push(village);
-    }
-    
-    // photo 타입이면 사진 미션만, question 타입이면 사진 미션이 아닌 문제만
-    if (questType === 'photo') {
-      query += ' AND option_a = ?';
-      params.push('사진 미션');
     } else {
-      query += ' AND option_a != ?';
-      params.push('사진 미션');
+      query += ' AND village IS NULL';
     }
     
     query += ' ORDER BY RAND() LIMIT 1';
+    
+    console.log(`[랜덤 퀘스트] 쿼리: ${query}`, params);
     
     const [rows] = await pool.execute(query, params);
     
     if (rows.length === 0) {
       const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
       return res.status(404).json({ 
-        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''} (type: ${questType})`,
+        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
         availableCities: availableCities.map(r => r.city),
         receivedParams: { city, town, village }
       });
     }
     
     const quest = rows[0];
+    
+    // quest의 option_a가 '사진 미션'인지 확인하여 타입 결정
+    const isPhotoQuest = quest.option_a === '사진 미션';
+    const questType = isPhotoQuest ? 'photo' : 'question';
+    console.log(`[랜덤 퀘스트] 선택된 quest ID: ${quest.id}, 타입: ${questType}`);
     
     if (questType === 'photo') {
       // 사진 찍는 퀘스트 응답 - 사진 업로드 엔드포인트로 리다이렉트
