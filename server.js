@@ -832,22 +832,6 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
 
     // 사용자별 업로드 히스토리 저장
     try {
-      // 업로드 히스토리 테이블이 없으면 생성
-      await pool.execute(`
-        CREATE TABLE IF NOT EXISTS user_upload_history (
-          id INT AUTO_INCREMENT PRIMARY KEY,
-          user_id VARCHAR(50) NOT NULL COMMENT '사용자 ID',
-          file_name VARCHAR(255) NOT NULL COMMENT '파일명',
-          file_key VARCHAR(500) NOT NULL COMMENT 'S3 파일 키 (경로 포함)',
-          file_url TEXT NOT NULL COMMENT 'S3 파일 URL',
-          file_size BIGINT NOT NULL COMMENT '파일 크기 (bytes)',
-          content_type VARCHAR(100) COMMENT '파일 타입 (MIME type)',
-          uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '업로드 시간',
-          INDEX idx_user_id (user_id),
-          INDEX idx_uploaded_at (uploaded_at)
-        ) COMMENT='사용자별 파일 업로드 히스토리'
-      `);
-
       // 히스토리 저장
       await pool.execute(
         `INSERT INTO user_upload_history 
@@ -859,7 +843,7 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
       console.log(`[업로드 히스토리] user_id: ${user_id}, file: ${fileName} 저장 완료`);
     } catch (historyError) {
       // 히스토리 저장 실패해도 업로드는 성공으로 처리
-      console.error('[업로드 히스토리 저장 실패]:', historyError.message);
+      console.error('[업로드 히스토리 저장 실패]:', historyError.message, historyError.stack);
     }
 
     res.json({
@@ -1004,6 +988,32 @@ app.get('/api/s3/debug/uploads', async (req, res) => {
     });
   }
 });
+
+// 업로드 히스토리 테이블 초기화 함수
+async function initializeUploadHistoryTable() {
+  try {
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_upload_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(50) NOT NULL COMMENT '사용자 ID',
+        file_name VARCHAR(255) NOT NULL COMMENT '파일명',
+        file_key VARCHAR(500) NOT NULL COMMENT 'S3 파일 키 (경로 포함)',
+        file_url TEXT NOT NULL COMMENT 'S3 파일 URL',
+        file_size BIGINT NOT NULL COMMENT '파일 크기 (bytes)',
+        content_type VARCHAR(100) COMMENT '파일 타입 (MIME type)',
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '업로드 시간',
+        INDEX idx_user_id (user_id),
+        INDEX idx_uploaded_at (uploaded_at)
+      ) COMMENT='사용자별 파일 업로드 히스토리'
+    `);
+    console.log('[초기화] user_upload_history 테이블 생성 완료');
+  } catch (error) {
+    console.error('[초기화] user_upload_history 테이블 생성 실패:', error.message);
+  }
+}
+
+// 서버 시작 시 테이블 초기화
+initializeUploadHistoryTable();
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
