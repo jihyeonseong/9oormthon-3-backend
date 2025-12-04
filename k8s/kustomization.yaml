@@ -6,7 +6,8 @@ namespace: goormthon-3
 resources:
   - backend.yaml
   - mysql-secret.yaml
-  - aws-s3-secret.yaml
+  # aws-s3-secret.yaml은 제외 - 수동으로 kubectl로 관리
+  # Secret은 한 번만 생성하면 됨 (리빌드 시 덮어쓰지 않음)
   - ingress.yaml # /api 경로를 외부에서 backend-service 로 보내기 위한 Ingress
 
 configMapGenerator:
