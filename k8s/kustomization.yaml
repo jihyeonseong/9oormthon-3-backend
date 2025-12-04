@@ -6,21 +6,13 @@ namespace: goormthon-3
 resources:
   - backend.yaml
   - mysql-secret.yaml
-  # aws-s3-secret.yaml은 secretGenerator로 생성 (로컬 파일 사용)
+  - aws-s3-secret.yaml
   - ingress.yaml # /api 경로를 외부에서 backend-service 로 보내기 위한 Ingress
 
 configMapGenerator:
   - name: backend-config
     files:
       - config.json=config/backend-config.json
-
-# AWS S3 Secret 생성 (로컬 파일에서 읽기 - .gitignore에 포함됨)
-secretGenerator:
-  - name: aws-s3-secret
-    envs:
-      - aws-s3-secret.local.env
-    options:
-      disableNameSuffixHash: true
 
 generatorOptions:
   disableNameSuffixHash: true
