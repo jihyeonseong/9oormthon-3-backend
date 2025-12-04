@@ -64,8 +64,50 @@ function translateRegionName(englishName, type = null) {
   return regionNameMap[englishName] || englishName;
 }
 
+// S3 이미지 파일 목록 캐시 (성능 최적화)
+let seongsanImageCache = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
+
+// S3에서 성산 이미지 파일 목록 가져오기 (캐싱)
+async function getSeongsanImageList() {
+  const now = Date.now();
+  
+  // 캐시가 유효하면 재사용
+  if (seongsanImageCache && (now - cacheTimestamp) < CACHE_TTL) {
+    return seongsanImageCache;
+  }
+  
+  try {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: S3_BUCKET_NAME,
+      Prefix: 'uploads/'
+    });
+    
+    const listResponse = await s3Client.send(listCommand);
+    const files = (listResponse.Contents || [])
+      .map(item => item.Key)
+      .filter(key => {
+        // 성산으로 시작하고 .jpeg로 끝나는 파일만
+        const fileName = key.split('/').pop(); // 파일명만 추출
+        return fileName && fileName.startsWith('성산') && fileName.endsWith('.jpeg');
+      })
+      .sort(); // 정렬하여 순서 보장
+    
+    // 캐시 업데이트
+    seongsanImageCache = files;
+    cacheTimestamp = now;
+    
+    return files;
+  } catch (error) {
+    console.error('[getSeongsanImageList] Error:', error);
+    return [];
+  }
+}
+
 // S3 이미지 Presigned URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
+// 실제 S3 파일명을 사용하여 정확한 Presigned URL 생성
 async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
     return null;
@@ -79,16 +121,32 @@ async function getSeongsanImageUrl(index) {
   try {
     const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
     
-    // S3에 저장된 실제 파일명
-    // 한글 파일명을 Buffer로 변환하여 정확한 인코딩 보장
-    const fileName = `성산${index}.jpeg`;
-    const imageKey = `uploads/${fileName}`;
+    // 캐시된 파일 목록에서 정확한 파일명 가져오기
+    const files = await getSeongsanImageList();
+    
+    // index에 해당하는 파일 찾기
+    if (index >= files.length) {
+      return null;
+    }
+    
+    const actualKey = files[index];
+    
+    // 파일 존재 여부 확인 (선택적)
+    try {
+      const headCommand = new HeadObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: actualKey
+      });
+      await s3Client.send(headCommand);
+    } catch (headError) {
+      console.warn(`[getSeongsanImageUrl] File not found: ${actualKey}`);
+      return null;
+    }
     
     // Presigned URL 생성 (24시간 유효)
-    // AWS SDK가 자동으로 URL 인코딩 처리하지만, 실제 파일명과 정확히 일치해야 함
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
-      Key: imageKey
+      Key: actualKey // 실제 S3 파일명 사용
     });
     
     const url = await getSignedUrl(s3Client, command, { 
@@ -97,7 +155,7 @@ async function getSeongsanImageUrl(index) {
     
     return url;
   } catch (error) {
-    // 오류 발생 시 null 반환
+    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error);
     return null;
   }
 }
