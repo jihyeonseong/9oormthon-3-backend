@@ -726,6 +726,7 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     console.log(`[퀘스트 조회] user_id: ${user_id}`);
     
     // quest_id를 기반으로 quests 테이블과 JOIN하여 city, town, village 가져오기
+    // user_upload_history와도 JOIN하여 업로드된 이미지 URL 가져오기
     const [rows] = await pool.execute(
       `SELECT 
         uqs.id,
@@ -738,9 +739,11 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
         uqs.question as '푼 문제',
         uqs.user_answer as '사용자가 제출한 정답',
         uqs.correct_answer as '실제 정답',
-        uqs.score as '점수'
+        uqs.score as '점수',
+        uuh.file_url as '업로드된 이미지 URL'
        FROM user_quest_scores uqs
        LEFT JOIN quests q ON uqs.quest_id = q.id
+       LEFT JOIN user_upload_history uuh ON uqs.quest_id = uuh.quest_id AND uqs.user_id = uuh.user_id
        WHERE uqs.user_id = ?
        ORDER BY uqs.answered_at DESC`,
       [user_id]
@@ -748,22 +751,49 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     
     console.log(`[퀘스트 조회] 조회된 퀘스트 수: ${rows.length}개`);
     
-    // 지역명을 한국어로 변환하고 이미지 URL 추가
-    // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 순서대로 불러오기
+    // 지역명을 한국어로 변환하고 이미지 URL 처리
     const translatedRows = await Promise.all(
-      rows.map(async (row, index) => {
-        // questId와 관계없이 순서대로 성산0, 성산1, 성산2 이미지 불러오기
-        const imageUrl = await getSeongsanImageUrl(index);
+      rows.map(async (row) => {
+        // 업로드된 이미지 URL이 있으면 사용, 없으면 null
+        let imageUrl = row['업로드된 이미지 URL'] || null;
         
-        console.log(`[퀘스트 조회] index ${index}, quest_id ${row.quest_id}, 이미지 URL: ${imageUrl ? '생성됨' : '없음'}`);
+        // 업로드된 이미지가 있고 Presigned URL이 필요한 경우 (S3 private 버킷)
+        if (imageUrl && imageUrl.includes('s3.ap-northeast-2.amazonaws.com')) {
+          // file_key를 추출하여 Presigned URL 생성
+          try {
+            const fileKey = imageUrl.split('.s3.ap-northeast-2.amazonaws.com/')[1]?.split('?')[0];
+            if (fileKey) {
+              const command = new GetObjectCommand({
+                Bucket: S3_BUCKET_NAME,
+                Key: fileKey
+              });
+              imageUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+            }
+          } catch (urlError) {
+            console.warn(`[퀘스트 조회] Presigned URL 생성 실패: ${urlError.message}`);
+            // 실패해도 원본 URL 사용
+          }
+        }
         
-        return {
-          ...row,
+        console.log(`[퀘스트 조회] quest_id ${row.quest_id}, 이미지 URL: ${imageUrl ? '있음' : '없음'}`);
+        
+        // 응답 객체 생성 (내부 필드 제거)
+        const responseRow = {
+          id: row.id,
+          user_id: row.user_id,
+          quest_id: row.quest_id,
+          '문제 푼 시간': row['문제 푼 시간'],
           '시': translateRegionName(row['시'], 'city'),
           '동': row['동'] ? translateRegionName(row['동'], 'town') : row['동'],
           '리': row['리'] ? translateRegionName(row['리'], 'village') : row['리'],
-          '이미지 URL': imageUrl || null
+          '푼 문제': row['푼 문제'],
+          '사용자가 제출한 정답': row['사용자가 제출한 정답'],
+          '실제 정답': row['실제 정답'],
+          '점수': row['점수'],
+          '이미지 URL': imageUrl
         };
+        
+        return responseRow;
       })
     );
     
