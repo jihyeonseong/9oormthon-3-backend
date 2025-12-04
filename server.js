@@ -389,7 +389,11 @@ app.get('/api/quests/random', async (req, res) => {
     
     console.log('Quest search params (processed):', { city, town, village });
     
-    // 랜덤으로 quest 하나 선택 (타입 구분 없이)
+    // 50:50 확률로 타입 먼저 선택
+    const questType = Math.random() < 0.5 ? 'photo' : 'question';
+    console.log(`[랜덤 퀘스트] 선택된 타입: ${questType}`);
+    
+    // 선택된 타입에 맞는 quest 조회
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
@@ -408,26 +412,107 @@ app.get('/api/quests/random', async (req, res) => {
       query += ' AND village IS NULL';
     }
     
+    // 타입에 따라 필터링
+    if (questType === 'photo') {
+      query += ' AND option_a = ?';
+      params.push('사진 미션');
+    } else {
+      query += ' AND option_a != ?';
+      params.push('사진 미션');
+    }
+    
     query += ' ORDER BY RAND() LIMIT 1';
     
     console.log(`[랜덤 퀘스트] 쿼리: ${query}`, params);
     
-    const [rows] = await pool.execute(query, params);
+    let [rows] = await pool.execute(query, params);
     
+    // 선택된 타입의 quest가 없으면 반대 타입으로 fallback
     if (rows.length === 0) {
-      const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
-      return res.status(404).json({ 
-        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
-        availableCities: availableCities.map(r => r.city),
-        receivedParams: { city, town, village }
-      });
+      console.log(`[랜덤 퀘스트] ${questType} 타입 quest를 찾을 수 없어 반대 타입으로 fallback`);
+      const fallbackType = questType === 'photo' ? 'question' : 'photo';
+      
+      query = 'SELECT * FROM quests WHERE city = ?';
+      params = [city];
+      
+      if (town) {
+        query += ' AND town = ?';
+        params.push(town);
+      } else {
+        query += ' AND town IS NULL';
+      }
+      
+      if (village) {
+        query += ' AND village = ?';
+        params.push(village);
+      } else {
+        query += ' AND village IS NULL';
+      }
+      
+      if (fallbackType === 'photo') {
+        query += ' AND option_a = ?';
+        params.push('사진 미션');
+      } else {
+        query += ' AND option_a != ?';
+        params.push('사진 미션');
+      }
+      
+      query += ' ORDER BY RAND() LIMIT 1';
+      
+      [rows] = await pool.execute(query, params);
+      
+      if (rows.length === 0) {
+        const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
+        return res.status(404).json({ 
+          error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
+          availableCities: availableCities.map(r => r.city),
+          receivedParams: { city, town, village }
+        });
+      }
+      
+      // fallback 타입으로 변경
+      const finalType = fallbackType;
+      const quest = rows[0];
+      console.log(`[랜덤 퀘스트] Fallback quest ID: ${quest.id}, 타입: ${finalType}`);
+      
+      if (finalType === 'photo') {
+        res.json({
+          type: 'photo',
+          id: quest.id,
+          region: {
+            city: quest.city,
+            town: quest.town,
+            village: quest.village
+          },
+          instruction: quest.question,
+          locationHint: quest.question,
+          uploadEndpoint: '/api/s3/upload',
+          options: {},
+          score: quest.score
+        });
+      } else {
+        res.json({
+          type: 'question',
+          id: quest.id,
+          region: {
+            city: quest.city,
+            town: quest.town,
+            village: quest.village
+          },
+          question: quest.question,
+          options: {
+            A: quest.option_a,
+            B: quest.option_b,
+            C: quest.option_c,
+            D: quest.option_d
+          },
+          score: quest.score
+        });
+      }
+      return;
     }
     
     const quest = rows[0];
-    
-    // quest의 option_a가 '사진 미션'인지 확인하여 타입 결정
-    const isPhotoQuest = quest.option_a === '사진 미션';
-    const questType = isPhotoQuest ? 'photo' : 'question';
     console.log(`[랜덤 퀘스트] 선택된 quest ID: ${quest.id}, 타입: ${questType}`);
     
     if (questType === 'photo') {
