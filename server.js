@@ -1012,8 +1012,57 @@ async function initializeUploadHistoryTable() {
   }
 }
 
-// 서버 시작 시 테이블 초기화
-initializeUploadHistoryTable();
+// 홍길동23 사용자에게 초기 이미지 URL 히스토리 추가
+async function initializeHongHistory() {
+  try {
+    const user_id = '홍길동23';
+    const region = process.env.AWS_REGION || 'ap-northeast-2';
+    const bucket = S3_BUCKET_NAME || 'goormthon-3';
+    
+    // seongsan0.jpeg, seongsan1.jpeg, seongsan2.jpeg 이미지들
+    const images = [
+      { fileName: 'seongsan0.jpeg' },
+      { fileName: 'seongsan1.jpeg' },
+      { fileName: 'seongsan2.jpeg' }
+    ];
+    
+    for (const img of images) {
+      const fileKey = `uploads/${img.fileName}`;
+      const fileUrl = `https://${bucket}.s3.${region}.amazonaws.com/${fileKey}`;
+      
+      try {
+        // 중복 체크 후 삽입
+        const [existing] = await pool.execute(
+          `SELECT id FROM user_upload_history 
+           WHERE user_id = ? AND file_key = ?`,
+          [user_id, fileKey]
+        );
+        
+        if (existing.length === 0) {
+          await pool.execute(
+            `INSERT INTO user_upload_history 
+             (user_id, file_name, file_key, file_url, file_size, content_type) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [user_id, img.fileName, fileKey, fileUrl, 0, 'image/jpeg']
+          );
+          console.log(`[초기 히스토리] ${user_id}에 ${img.fileName} 추가 완료`);
+        } else {
+          console.log(`[초기 히스토리] ${user_id}에 ${img.fileName} 이미 존재함`);
+        }
+      } catch (error) {
+        console.error(`[초기 히스토리] ${img.fileName} 추가 실패:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('[초기 히스토리] 초기화 실패:', error.message);
+  }
+}
+
+// 서버 시작 시 테이블 초기화 및 초기 데이터 삽입
+(async () => {
+  await initializeUploadHistoryTable();
+  await initializeHongHistory();
+})();
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
