@@ -109,6 +109,7 @@ async function getSeongsanImageList() {
 // S3 이미지 Presigned URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
 // Private 버킷이므로 Presigned URL 사용
+// 매번 호출 시 새로운 Presigned URL 생성 (만료 방지)
 async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
     console.warn(`[getSeongsanImageUrl] S3_BUCKET_NAME is not set`);
@@ -122,26 +123,50 @@ async function getSeongsanImageUrl(index) {
   }
   
   try {
-    // S3 파일명 직접 사용
-    const fileName = `성산${index}.jpeg`;
+    // S3 파일명 직접 사용 (실제 파일명: seongsan0.jpeg, seongsan1.jpeg, seongsan2.jpeg)
+    const fileName = `seongsan${index}.jpeg`;
     const imageKey = `uploads/${fileName}`;
     
     console.log(`[getSeongsanImageUrl] Generating Presigned URL for index ${index}, key: ${imageKey}`);
     
-    // Presigned URL 생성 (1시간 유효)
+    // 파일 존재 여부 확인 (NoSuchKey 방지)
+    try {
+      const headCommand = new HeadObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: imageKey
+      });
+      await s3Client.send(headCommand);
+      console.log(`[getSeongsanImageUrl] File exists: ${imageKey}`);
+    } catch (headError) {
+      if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+        console.error(`[getSeongsanImageUrl] File not found in S3: ${imageKey}`);
+        return null;
+      }
+      // 다른 에러는 무시하고 Presigned URL 생성 시도
+      console.warn(`[getSeongsanImageUrl] HeadObject check failed (continuing): ${headError.message}`);
+    }
+    
+    // Presigned URL 생성 (5분 유효) - 매번 새로 생성하여 만료 방지
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: imageKey
     });
     
     const url = await getSignedUrl(s3Client, command, { 
-      expiresIn: 3600 // 1시간
+      expiresIn: 300 // 5분 (URL에서 확인한 값과 동일)
     });
     
-    console.log(`[getSeongsanImageUrl] Successfully generated Presigned URL for index ${index}`);
+    console.log(`[getSeongsanImageUrl] Successfully generated Presigned URL for index ${index}, expires in 5 minutes`);
     return url;
   } catch (error) {
-    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, error.message, error.stack);
+    // 상세한 에러 정보 로깅
+    console.error(`[getSeongsanImageUrl] Error for index ${index}:`, {
+      name: error.name,
+      message: error.message,
+      code: error.Code || error.code,
+      statusCode: error.$metadata?.httpStatusCode,
+      stack: error.stack
+    });
     return null;
   }
 }
