@@ -726,7 +726,6 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     console.log(`[퀘스트 조회] user_id: ${user_id}`);
     
     // quest_id를 기반으로 quests 테이블과 JOIN하여 city, town, village 가져오기
-    // user_upload_history와도 JOIN하여 업로드된 이미지 URL 가져오기
     const [rows] = await pool.execute(
       `SELECT 
         uqs.id,
@@ -739,21 +738,67 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
         uqs.question as '푼 문제',
         uqs.user_answer as '사용자가 제출한 정답',
         uqs.correct_answer as '실제 정답',
-        uqs.score as '점수',
-        uuh.file_url as '업로드된 이미지 URL'
+        uqs.score as '점수'
        FROM user_quest_scores uqs
        LEFT JOIN quests q ON uqs.quest_id = q.id
-       LEFT JOIN user_upload_history uuh ON uqs.quest_id = uuh.quest_id AND uqs.user_id = uuh.user_id
        WHERE uqs.user_id = ?
        ORDER BY uqs.answered_at DESC`,
       [user_id]
+    );
+    
+    // 각 quest_id에 대해 user_upload_history에서 이미지 URL 조회
+    // quest_id 컬럼이 없을 수 있으므로 서브쿼리로 별도 조회
+    const rowsWithImages = await Promise.all(
+      rows.map(async (row) => {
+        let imageUrl = null;
+        
+        if (row.quest_id) {
+          try {
+            // quest_id로 업로드 히스토리 조회 (quest_id 컬럼이 있으면 사용, 없으면 다른 방법)
+            const [uploadRows] = await pool.execute(
+              `SELECT file_url, file_key FROM user_upload_history 
+               WHERE user_id = ? AND quest_id = ? 
+               ORDER BY uploaded_at DESC LIMIT 1`,
+              [user_id, row.quest_id]
+            );
+            
+            if (uploadRows.length > 0) {
+              imageUrl = uploadRows[0].file_url;
+            }
+          } catch (uploadError) {
+            // quest_id 컬럼이 없을 수 있으므로 에러 무시하고 계속 진행
+            console.warn(`[퀘스트 조회] quest_id로 이미지 조회 실패 (quest_id 컬럼이 없을 수 있음): ${uploadError.message}`);
+            
+            // quest_id 없이 user_id만으로 조회 시도
+            try {
+              const [uploadRows] = await pool.execute(
+                `SELECT file_url, file_key FROM user_upload_history 
+                 WHERE user_id = ? 
+                 ORDER BY uploaded_at DESC LIMIT 1`,
+                [user_id]
+              );
+              
+              if (uploadRows.length > 0) {
+                imageUrl = uploadRows[0].file_url;
+              }
+            } catch (fallbackError) {
+              console.warn(`[퀘스트 조회] fallback 이미지 조회 실패: ${fallbackError.message}`);
+            }
+          }
+        }
+        
+        return {
+          ...row,
+          '업로드된 이미지 URL': imageUrl
+        };
+      })
     );
     
     console.log(`[퀘스트 조회] 조회된 퀘스트 수: ${rows.length}개`);
     
     // 지역명을 한국어로 변환하고 이미지 URL 처리
     const translatedRows = await Promise.all(
-      rows.map(async (row) => {
+      rowsWithImages.map(async (row) => {
         // 업로드된 이미지 URL이 있으면 사용, 없으면 null
         let imageUrl = row['업로드된 이미지 URL'] || null;
         
@@ -1150,21 +1195,49 @@ async function initializeUploadHistoryTable() {
       ) COMMENT='사용자별 파일 업로드 히스토리'
     `);
     
-    // 기존 테이블에 quest_id 컬럼 추가 (이미 존재하는 경우 무시)
+    // 기존 테이블에 quest_id 컬럼 추가 (컬럼 존재 여부 확인 후 추가)
     try {
-      await pool.execute(`
-        ALTER TABLE user_upload_history 
-        ADD COLUMN IF NOT EXISTS quest_id INT COMMENT '퀘스트 ID (사진 미션인 경우)'
+      // 컬럼 존재 여부 확인
+      const [columns] = await pool.execute(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'user_upload_history' 
+        AND COLUMN_NAME = 'quest_id'
       `);
-      await pool.execute(`
-        ALTER TABLE user_upload_history 
-        ADD INDEX IF NOT EXISTS idx_quest_id (quest_id)
-      `);
-    } catch (alterError) {
-      // 컬럼이 이미 존재하거나 인덱스가 이미 존재하는 경우 무시
-      if (!alterError.message.includes('Duplicate column') && !alterError.message.includes('Duplicate key')) {
-        console.warn('[초기화] quest_id 컬럼 추가 중 경고:', alterError.message);
+      
+      if (columns.length === 0) {
+        // 컬럼이 없으면 추가
+        await pool.execute(`
+          ALTER TABLE user_upload_history 
+          ADD COLUMN quest_id INT COMMENT '퀘스트 ID (사진 미션인 경우)'
+        `);
+        console.log('[초기화] quest_id 컬럼 추가 완료');
+      } else {
+        console.log('[초기화] quest_id 컬럼 이미 존재함');
       }
+      
+      // 인덱스 존재 여부 확인
+      const [indexes] = await pool.execute(`
+        SELECT INDEX_NAME 
+        FROM INFORMATION_SCHEMA.STATISTICS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'user_upload_history' 
+        AND INDEX_NAME = 'idx_quest_id'
+      `);
+      
+      if (indexes.length === 0) {
+        // 인덱스가 없으면 추가
+        await pool.execute(`
+          ALTER TABLE user_upload_history 
+          ADD INDEX idx_quest_id (quest_id)
+        `);
+        console.log('[초기화] idx_quest_id 인덱스 추가 완료');
+      } else {
+        console.log('[초기화] idx_quest_id 인덱스 이미 존재함');
+      }
+    } catch (alterError) {
+      console.warn('[초기화] quest_id 컬럼/인덱스 추가 중 경고:', alterError.message);
     }
     
     console.log('[초기화] user_upload_history 테이블 생성 완료');
