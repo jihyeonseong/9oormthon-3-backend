@@ -15,7 +15,7 @@ spec:
       serviceAccountName: goormthon-3
       containers:
       - name: backend
-        image: 837126493345.dkr.ecr.ap-northeast-2.amazonaws.com/goormthon-3/backend:build-78
+        image: 837126493345.dkr.ecr.ap-northeast-2.amazonaws.com/goormthon-3/backend:build-79
         ports:
         - containerPort: 8080
         envFrom:
