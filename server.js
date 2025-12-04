@@ -192,20 +192,48 @@ app.delete('/api/users/:id', async (req, res) => {
 // 지역별 랜덤 퀘스트 문제 조회
 app.get('/api/quests/random', async (req, res) => {
   try {
-    // URL 디코딩 처리 (한글 파라미터 지원)
-    const city = req.query.city ? decodeURIComponent(req.query.city) : null;
-    const town = req.query.town ? decodeURIComponent(req.query.town) : null;
-    const village = req.query.village ? decodeURIComponent(req.query.village) : null;
+    // Express는 쿼리 파라미터를 자동으로 디코딩하지만,
+    // 일부 프록시/인그레스에서 이중 인코딩이 될 수 있으므로 안전하게 처리
+    // 원본 쿼리 문자열에서 직접 파싱하는 방법도 고려 가능
+    let city = req.query.city;
+    let town = req.query.town;
+    let village = req.query.village;
+    
+    // %가 포함되어 있으면 아직 인코딩된 상태이므로 디코딩 시도
+    // Express가 이미 디코딩했다면 %가 없을 것이므로 이 조건은 통과하지 않음
+    if (city && typeof city === 'string' && city.includes('%')) {
+      try {
+        city = decodeURIComponent(city);
+      } catch (e) {
+        // 디코딩 실패 시 원본 사용
+        console.warn('Failed to decode city:', city, e);
+      }
+    }
+    if (town && typeof town === 'string' && town.includes('%')) {
+      try {
+        town = decodeURIComponent(town);
+      } catch (e) {
+        console.warn('Failed to decode town:', town, e);
+      }
+    }
+    if (village && typeof village === 'string' && village.includes('%')) {
+      try {
+        village = decodeURIComponent(village);
+      } catch (e) {
+        console.warn('Failed to decode village:', village, e);
+      }
+    }
     
     // 최소한 city는 필요
     if (!city) {
       return res.status(400).json({ error: 'City parameter is required' });
     }
     
-    // 지역별 랜덤 문제 1개 조회
     // 디버깅을 위해 로그 추가
-    console.log('Quest search params:', { city, town, village });
+    console.log('Quest search params (raw):', req.query);
+    console.log('Quest search params (processed):', { city, town, village });
     
+    // 지역별 랜덤 문제 1개 조회
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
@@ -232,7 +260,8 @@ app.get('/api/quests/random', async (req, res) => {
       const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
       return res.status(404).json({ 
         error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
-        availableCities: availableCities.map(r => r.city)
+        availableCities: availableCities.map(r => r.city),
+        receivedParams: { city, town, village }
       });
     }
     
