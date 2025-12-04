@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const multer = require('multer');
 
 const app = express();
@@ -122,8 +123,6 @@ async function getSeongsanImageUrl(index) {
   }
   
   try {
-    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-    
     // 실제 S3에 저장된 파일 목록에서 정확한 파일명 가져오기
     const files = await getSeongsanImageList();
     console.log(`[getSeongsanImageUrl] Found ${files.length} files for index ${index}:`, files);
@@ -137,15 +136,14 @@ async function getSeongsanImageUrl(index) {
     const actualKey = files[index];
     console.log(`[getSeongsanImageUrl] Using actual S3 key for index ${index}: ${actualKey}`);
     
-    // Presigned URL 생성 (24시간 유효)
-    // 실제 S3 파일명을 사용하여 정확한 URL 생성
+    // Presigned URL 생성 (1시간 유효)
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
-      Key: actualKey // 실제 S3에 저장된 파일명 사용
+      Key: actualKey
     });
     
     const url = await getSignedUrl(s3Client, command, { 
-      expiresIn: 86400 
+      expiresIn: 3600 // 1시간
     });
     
     console.log(`[getSeongsanImageUrl] Successfully generated Presigned URL for index ${index}`);
