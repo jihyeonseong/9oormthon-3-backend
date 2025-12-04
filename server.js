@@ -725,22 +725,24 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     
     console.log(`[퀘스트 조회] user_id: ${user_id}`);
     
+    // quest_id를 기반으로 quests 테이블과 JOIN하여 city, town, village 가져오기
     const [rows] = await pool.execute(
       `SELECT 
-        id,
-        user_id,
-        quest_id,
-        answered_at as '문제 푼 시간',
-        city as '시',
-        town as '동',
-        village as '리',
-        question as '푼 문제',
-        user_answer as '사용자가 제출한 정답',
-        correct_answer as '실제 정답',
-        score as '점수'
-       FROM user_quest_scores
-       WHERE user_id = ?
-       ORDER BY answered_at DESC`,
+        uqs.id,
+        uqs.user_id,
+        uqs.quest_id,
+        uqs.answered_at as '문제 푼 시간',
+        COALESCE(q.city, uqs.city) as '시',
+        COALESCE(q.town, uqs.town) as '동',
+        COALESCE(q.village, uqs.village) as '리',
+        uqs.question as '푼 문제',
+        uqs.user_answer as '사용자가 제출한 정답',
+        uqs.correct_answer as '실제 정답',
+        uqs.score as '점수'
+       FROM user_quest_scores uqs
+       LEFT JOIN quests q ON uqs.quest_id = q.id
+       WHERE uqs.user_id = ?
+       ORDER BY uqs.answered_at DESC`,
       [user_id]
     );
     
@@ -916,6 +918,8 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
+    const quest_id = req.body.quest_id; // quest_id 받기 (선택사항)
+
     const fileName = req.body.fileName || `${Date.now()}-${req.file.originalname}`;
     const folder = req.body.folder || 'uploads';
 
@@ -938,15 +942,15 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
 
     // 사용자별 업로드 히스토리 저장
     try {
-      // 히스토리 저장
+      // 히스토리 저장 (quest_id 포함)
       await pool.execute(
         `INSERT INTO user_upload_history 
-         (user_id, file_name, file_key, file_url, file_size, content_type) 
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [user_id, fileName, key, fileUrl, req.file.size, req.file.mimetype]
+         (user_id, quest_id, file_name, file_key, file_url, file_size, content_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [user_id, quest_id || null, fileName, key, fileUrl, req.file.size, req.file.mimetype]
       );
 
-      console.log(`[업로드 히스토리] user_id: ${user_id}, file: ${fileName} 저장 완료`);
+      console.log(`[업로드 히스토리] user_id: ${user_id}, quest_id: ${quest_id || 'N/A'}, file: ${fileName} 저장 완료`);
     } catch (historyError) {
       // 히스토리 저장 실패해도 업로드는 성공으로 처리
       console.error('[업로드 히스토리 저장 실패]:', historyError.message, historyError.stack);
@@ -955,6 +959,7 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
     res.json({
       success: true,
       user_id: user_id,
+      quest_id: quest_id || null,
       fileName: fileName,
       key: key,
       url: fileUrl,
@@ -1102,6 +1107,7 @@ async function initializeUploadHistoryTable() {
       CREATE TABLE IF NOT EXISTS user_upload_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id VARCHAR(50) NOT NULL COMMENT '사용자 ID',
+        quest_id INT COMMENT '퀘스트 ID (사진 미션인 경우)',
         file_name VARCHAR(255) NOT NULL COMMENT '파일명',
         file_key VARCHAR(500) NOT NULL COMMENT 'S3 파일 키 (경로 포함)',
         file_url TEXT NOT NULL COMMENT 'S3 파일 URL',
@@ -1109,9 +1115,28 @@ async function initializeUploadHistoryTable() {
         content_type VARCHAR(100) COMMENT '파일 타입 (MIME type)',
         uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '업로드 시간',
         INDEX idx_user_id (user_id),
+        INDEX idx_quest_id (quest_id),
         INDEX idx_uploaded_at (uploaded_at)
       ) COMMENT='사용자별 파일 업로드 히스토리'
     `);
+    
+    // 기존 테이블에 quest_id 컬럼 추가 (이미 존재하는 경우 무시)
+    try {
+      await pool.execute(`
+        ALTER TABLE user_upload_history 
+        ADD COLUMN IF NOT EXISTS quest_id INT COMMENT '퀘스트 ID (사진 미션인 경우)'
+      `);
+      await pool.execute(`
+        ALTER TABLE user_upload_history 
+        ADD INDEX IF NOT EXISTS idx_quest_id (quest_id)
+      `);
+    } catch (alterError) {
+      // 컬럼이 이미 존재하거나 인덱스가 이미 존재하는 경우 무시
+      if (!alterError.message.includes('Duplicate column') && !alterError.message.includes('Duplicate key')) {
+        console.warn('[초기화] quest_id 컬럼 추가 중 경고:', alterError.message);
+      }
+    }
+    
     console.log('[초기화] user_upload_history 테이블 생성 완료');
   } catch (error) {
     console.error('[초기화] user_upload_history 테이블 생성 실패:', error.message);
