@@ -393,37 +393,45 @@ app.get('/api/quests/random', async (req, res) => {
     const questType = Math.random() < 0.5 ? 'photo' : 'question';
     console.log(`[랜덤 퀘스트] 선택된 타입: ${questType}`);
     
+    // 타입에 따라 적절한 quest 조회
+    let query = 'SELECT * FROM quests WHERE city = ?';
+    let params = [city];
+    
+    if (town) {
+      query += ' AND town = ?';
+      params.push(town);
+    }
+    
+    if (village) {
+      query += ' AND village = ?';
+      params.push(village);
+    }
+    
+    // photo 타입이면 사진 미션만, question 타입이면 사진 미션이 아닌 문제만
     if (questType === 'photo') {
-      // 사진 찍는 퀘스트
-      // 지역별 랜덤 문제 1개 조회 (사진 찍을 장소 힌트용)
-      let query = 'SELECT * FROM quests WHERE city = ?';
-      let params = [city];
-      
-      if (town) {
-        query += ' AND town = ?';
-        params.push(town);
-      }
-      
-      if (village) {
-        query += ' AND village = ?';
-        params.push(village);
-      }
-      
-      query += ' ORDER BY RAND() LIMIT 1';
-      
-      const [rows] = await pool.execute(query, params);
-      
-      if (rows.length === 0) {
-        const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
-        return res.status(404).json({ 
-          error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
-          availableCities: availableCities.map(r => r.city),
-          receivedParams: { city, town, village }
-        });
-      }
-      
-      const quest = rows[0];
-      
+      query += ' AND option_a = ?';
+      params.push('사진 미션');
+    } else {
+      query += ' AND option_a != ?';
+      params.push('사진 미션');
+    }
+    
+    query += ' ORDER BY RAND() LIMIT 1';
+    
+    const [rows] = await pool.execute(query, params);
+    
+    if (rows.length === 0) {
+      const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
+      return res.status(404).json({ 
+        error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''} (type: ${questType})`,
+        availableCities: availableCities.map(r => r.city),
+        receivedParams: { city, town, village }
+      });
+    }
+    
+    const quest = rows[0];
+    
+    if (questType === 'photo') {
       // 사진 찍는 퀘스트 응답 - 사진 업로드 엔드포인트로 리다이렉트
       res.json({
         type: 'photo',
@@ -433,42 +441,13 @@ app.get('/api/quests/random', async (req, res) => {
           town: quest.town,
           village: quest.village
         },
-        instruction: `이 지역의 아름다운 풍경을 사진으로 찍어주세요!`,
+        instruction: quest.question, // DB에 저장된 사진 미션 지시사항 사용
         locationHint: quest.question, // 문제 질문을 장소 힌트로 사용
         uploadEndpoint: '/api/s3/upload', // 사진 업로드 엔드포인트
         options: {}, // 프론트엔드 호환성을 위해 빈 객체 (사진 찍는 퀘스트는 사용하지 않음)
         score: quest.score
       });
     } else {
-      // 문제 푸는 퀘스트 (기존 로직)
-      let query = 'SELECT * FROM quests WHERE city = ?';
-      let params = [city];
-      
-      if (town) {
-        query += ' AND town = ?';
-        params.push(town);
-      }
-      
-      if (village) {
-        query += ' AND village = ?';
-        params.push(village);
-      }
-      
-      query += ' ORDER BY RAND() LIMIT 1';
-      
-      const [rows] = await pool.execute(query, params);
-      
-      if (rows.length === 0) {
-        const [availableCities] = await pool.execute('SELECT DISTINCT city FROM quests');
-        return res.status(404).json({ 
-          error: `No quest found for region: ${city}${town ? ' ' + town : ''}${village ? ' ' + village : ''}`,
-          availableCities: availableCities.map(r => r.city),
-          receivedParams: { city, town, village }
-        });
-      }
-      
-      const quest = rows[0];
-      
       // 문제 푸는 퀘스트 응답
       res.json({
         type: 'question',

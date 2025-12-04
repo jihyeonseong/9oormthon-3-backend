@@ -176,3 +176,30 @@ INSERT INTO quests (city, town, village, question, option_a, option_b, option_c,
      'C', 1)
 ON DUPLICATE KEY UPDATE question=question;
 
+-- 사진 미션 데이터 (photo quest type)
+-- City 레벨
+INSERT INTO quests (city, town, village, question, option_a, option_b, option_c, option_d, correct_answer, score) VALUES
+    ('Jeju', NULL, NULL, '동문시장 등 제주시 일상 풍경이 느껴지는 활기찬 순간을 찍어주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Seogwipo', NULL, NULL, '폭포와 바다가 함께 보이는 서귀포 특유의 여유로운 풍경을 담아주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+
+-- Town 레벨
+    ('Jeju', 'Aewol', NULL, '애월 카페거리에서 바다 감성이 드러나는 장면을 촬영해주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Jeju', 'Gujwa', NULL, '세화 주변에서 청년·예술 분위기가 느껴지는 힙한 공간을 찍어주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Seogwipo', 'Seogwi', NULL, '이중섭 거리에서 예술적 감성이 묻어나는 장소를 사진으로 남겨주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Seogwipo', 'Seongsan', NULL, '성산일출봉이 독특한 각도로 보이는 숨은 포인트를 촬영해주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+
+-- Village 레벨
+    ('Jeju', 'Aewol', 'Woljeong', '월정리 바다의 청량한 색감이 가장 잘 드러나는 장소를 찍어주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Jeju', 'Gujwa', 'Sehwa', '세화오일장 주변에서 로컬의 일상과 예술이 어우러진 순간을 촬영해주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1),
+    ('Seogwipo', 'Seongsan', 'Seongsan', '성산리 골목 속에서 생활 풍경과 성산일출봉이 함께 보이는 장면을 담아주세요.',
+     '사진 미션', '사진 미션', '사진 미션', '사진 미션', 'A', 1)
+ON DUPLICATE KEY UPDATE question=question;
+
