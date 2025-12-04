@@ -105,9 +105,9 @@ async function getSeongsanImageList() {
   }
 }
 
-// S3 이미지 Presigned URL 생성 함수
+// S3 이미지 Public URL 생성 함수
 // 성산0.jpeg, 성산1.jpeg, 성산2.jpeg만 불러오기 (questId와 관계없이)
-// 실제 S3 파일명을 사용하여 정확한 Presigned URL 생성
+// Public 버킷이므로 Presigned URL 대신 직접 public URL 사용
 async function getSeongsanImageUrl(index) {
   if (!S3_BUCKET_NAME) {
     return null;
@@ -119,8 +119,6 @@ async function getSeongsanImageUrl(index) {
   }
   
   try {
-    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-    
     // 캐시된 파일 목록에서 정확한 파일명 가져오기
     const files = await getSeongsanImageList();
     
@@ -131,27 +129,11 @@ async function getSeongsanImageUrl(index) {
     
     const actualKey = files[index];
     
-    // 파일 존재 여부 확인 (선택적)
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: S3_BUCKET_NAME,
-        Key: actualKey
-      });
-      await s3Client.send(headCommand);
-    } catch (headError) {
-      console.warn(`[getSeongsanImageUrl] File not found: ${actualKey}`);
-      return null;
-    }
-    
-    // Presigned URL 생성 (24시간 유효)
-    const command = new GetObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: actualKey // 실제 S3 파일명 사용
-    });
-    
-    const url = await getSignedUrl(s3Client, command, { 
-      expiresIn: 86400 
-    });
+    // Public S3 URL 생성 (버킷이 public이므로 Presigned URL 불필요)
+    const region = process.env.AWS_REGION || 'ap-northeast-2';
+    // 파일명의 각 경로 세그먼트를 URL 인코딩
+    const encodedKey = actualKey.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    const url = `https://${S3_BUCKET_NAME}.s3.${region}.amazonaws.com/${encodedKey}`;
     
     return url;
   } catch (error) {
