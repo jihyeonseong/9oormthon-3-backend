@@ -394,19 +394,21 @@ app.get('/api/quests/random', async (req, res) => {
     console.log(`[랜덤 퀘스트] 선택된 타입: ${questType}`);
     
     // 선택된 타입에 맞는 quest 조회
+    // 더 유연한 매칭: 정확한 매칭을 우선하되, 상위 레벨 quest도 포함
     let query = 'SELECT * FROM quests WHERE city = ?';
     let params = [city];
     
-    // town과 village 조건 추가 (NULL 값 처리)
+    // town 조건: 정확히 일치하거나 NULL인 경우
     if (town) {
-      query += ' AND town = ?';
+      query += ' AND (town = ? OR town IS NULL)';
       params.push(town);
     } else {
       query += ' AND town IS NULL';
     }
     
+    // village 조건: 정확히 일치하거나 NULL인 경우
     if (village) {
-      query += ' AND village = ?';
+      query += ' AND (village = ? OR village IS NULL)';
       params.push(village);
     } else {
       query += ' AND village IS NULL';
@@ -421,7 +423,16 @@ app.get('/api/quests/random', async (req, res) => {
       params.push('사진 미션');
     }
     
-    query += ' ORDER BY RAND() LIMIT 1';
+    // 정확한 매칭 우선 (village가 있으면 village 레벨 우선, 없으면 town 레벨 우선)
+    if (village) {
+      query += ' ORDER BY CASE WHEN village = ? THEN 1 WHEN town = ? THEN 2 ELSE 3 END, RAND() LIMIT 1';
+      params.push(village, town || '');
+    } else if (town) {
+      query += ' ORDER BY CASE WHEN town = ? THEN 1 ELSE 2 END, RAND() LIMIT 1';
+      params.push(town);
+    } else {
+      query += ' ORDER BY RAND() LIMIT 1';
+    }
     
     console.log(`[랜덤 퀘스트] 쿼리: ${query}`, params);
     
@@ -435,15 +446,16 @@ app.get('/api/quests/random', async (req, res) => {
       query = 'SELECT * FROM quests WHERE city = ?';
       params = [city];
       
+      // 더 유연한 매칭
       if (town) {
-        query += ' AND town = ?';
+        query += ' AND (town = ? OR town IS NULL)';
         params.push(town);
       } else {
         query += ' AND town IS NULL';
       }
       
       if (village) {
-        query += ' AND village = ?';
+        query += ' AND (village = ? OR village IS NULL)';
         params.push(village);
       } else {
         query += ' AND village IS NULL';
@@ -457,7 +469,18 @@ app.get('/api/quests/random', async (req, res) => {
         params.push('사진 미션');
       }
       
-      query += ' ORDER BY RAND() LIMIT 1';
+      // 정확한 매칭 우선
+      if (village) {
+        query += ' ORDER BY CASE WHEN village = ? THEN 1 WHEN town = ? THEN 2 ELSE 3 END, RAND() LIMIT 1';
+        params.push(village, town || '');
+      } else if (town) {
+        query += ' ORDER BY CASE WHEN town = ? THEN 1 ELSE 2 END, RAND() LIMIT 1';
+        params.push(town);
+      } else {
+        query += ' ORDER BY RAND() LIMIT 1';
+      }
+      
+      console.log(`[랜덤 퀘스트] Fallback 쿼리: ${query}`, params);
       
       [rows] = await pool.execute(query, params);
       
