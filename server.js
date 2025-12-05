@@ -9,6 +9,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 모든 요청 로깅 (디버깅용)
+app.use((req, res, next) => {
+  if (req.path.includes('/quests') && req.method === 'POST') {
+    console.log(`[요청 로그] ${req.method} ${req.path}`, {
+      params: req.params,
+      body: req.body,
+      query: req.query
+    });
+  }
+  next();
+});
+
 // MySQL 연결 풀 생성
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'mysql',
