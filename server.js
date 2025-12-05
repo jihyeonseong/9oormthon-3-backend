@@ -193,6 +193,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB 제한
+  },
+  fileFilter: (req, file, cb) => {
+    console.log(`[Multer] 파일 필터 - fieldname: ${file.fieldname}, originalname: ${file.originalname}, mimetype: ${file.mimetype}`);
+    cb(null, true);
   }
 });
 
@@ -1053,21 +1057,83 @@ app.post('/api/quests/:id/image', upload.single('image'), async (req, res) => {
   }
 });
 
+// Multer 에러 핸들러 미들웨어
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error(`[Multer 에러] ${err.code}:`, err.message);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ 
+        error: 'File too large',
+        details: '파일 크기는 10MB를 초과할 수 없습니다.',
+        maxSize: '10MB'
+      });
+    }
+    return res.status(400).json({ 
+      error: 'File upload error',
+      details: err.message,
+      code: err.code
+    });
+  }
+  if (err) {
+    console.error(`[업로드 에러]`, err);
+    return res.status(500).json({ 
+      error: 'Upload failed',
+      details: err.message
+    });
+  }
+  next();
+};
+
 // 파일 업로드 (POST /api/s3/upload)
 // user_id를 받아서 사용자별 업로드 히스토리 저장
-app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
+app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req, res) => {
+  console.log(`[S3 업로드] ========== 요청 시작 ==========`);
+  console.log(`[S3 업로드] 요청 URL: ${req.url}`);
+  console.log(`[S3 업로드] 요청 Method: ${req.method}`);
+  console.log(`[S3 업로드] 요청 Headers:`, {
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length']
+  });
+  console.log(`[S3 업로드] 요청 Body (user_id, quest_id, fileName, folder):`, {
+    user_id: req.body.user_id,
+    quest_id: req.body.quest_id,
+    fileName: req.body.fileName,
+    folder: req.body.folder
+  });
+  console.log(`[S3 업로드] 파일 정보:`, {
+    file: req.file ? {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : '없음'
+  });
+  
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      console.error(`[S3 업로드] 파일이 없음 - 요청 body:`, req.body);
+      console.error(`[S3 업로드] 요청 files:`, req.files);
+      return res.status(400).json({ 
+        error: 'No file uploaded',
+        details: '파일이 요청에 포함되지 않았습니다. multipart/form-data 형식으로 "file" 필드에 파일을 첨부해주세요.',
+        receivedBody: Object.keys(req.body),
+        receivedFiles: req.files ? Object.keys(req.files) : 'none'
+      });
     }
 
     if (!S3_BUCKET_NAME) {
+      console.error(`[S3 업로드] S3 버킷이 설정되지 않음`);
       return res.status(500).json({ error: 'S3 bucket not configured' });
     }
 
     const user_id = req.body.user_id;
     if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
+      console.error(`[S3 업로드] user_id가 없음 - 요청 body:`, req.body);
+      return res.status(400).json({ 
+        error: 'user_id is required',
+        details: '요청 body에 user_id를 포함해주세요.',
+        receivedBody: req.body
+      });
     }
 
     const quest_id = req.body.quest_id; // quest_id 받기 (선택사항)
@@ -1108,6 +1174,8 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
       console.error('[업로드 히스토리 저장 실패]:', historyError.message, historyError.stack);
     }
 
+    console.log(`[S3 업로드] 업로드 성공 - user_id: ${user_id}, quest_id: ${quest_id || 'N/A'}, file: ${fileName}, url: ${fileUrl}`);
+    
     res.json({
       success: true,
       user_id: user_id,
@@ -1118,8 +1186,17 @@ app.post('/api/s3/upload', upload.single('file'), async (req, res) => {
       size: req.file.size
     });
   } catch (error) {
-    console.error('S3 upload error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[S3 업로드] 에러 발생:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code
+    });
+    res.status(500).json({ 
+      error: error.message,
+      details: 'S3 업로드 중 오류가 발생했습니다.',
+      code: error.code || 'UNKNOWN_ERROR'
+    });
   }
 });
 
