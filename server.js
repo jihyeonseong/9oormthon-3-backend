@@ -563,12 +563,17 @@ app.post('/api/quests/:id/check', async (req, res) => {
     const { id } = req.params;
     const { answer, user_id } = req.body; // user_id는 user_id 필드 (예: "지현23")
     
+    console.log(`[퀘스트 정답 확인] POST 요청 받음 - quest_id: ${id}, user_id: ${user_id || '없음'}, answer: ${answer || '없음'}`);
+    console.log(`[퀘스트 정답 확인] 요청 body:`, JSON.stringify(req.body));
+    
     // 파라미터 검증
     if (!answer) {
+      console.warn(`[퀘스트 정답 확인] answer가 없음 - quest_id: ${id}`);
       return res.status(400).json({ error: 'Answer is required' });
     }
     
     if (!id) {
+      console.warn(`[퀘스트 정답 확인] quest_id가 없음`);
       return res.status(400).json({ error: 'Quest ID is required' });
     }
     
