@@ -1571,15 +1571,16 @@ async function syncPhotoQuestsToScores() {
     console.log('[초기화] 사진 미션 동기화 시작...');
     
     // user_upload_history에서 quest_id가 있고, 해당 quest가 사진 미션인 경우 조회
+    // COLLATE를 명시하여 collation 충돌 방지
     const [uploadHistory] = await pool.execute(
       `SELECT DISTINCT uuh.user_id, uuh.quest_id, uuh.uploaded_at
        FROM user_upload_history uuh
        INNER JOIN quests q ON uuh.quest_id = q.id
        WHERE uuh.quest_id IS NOT NULL 
-         AND q.option_a = '사진 미션'
+         AND q.option_a COLLATE utf8mb4_unicode_ci = '사진 미션' COLLATE utf8mb4_unicode_ci
          AND NOT EXISTS (
            SELECT 1 FROM user_quest_scores uqs 
-           WHERE uqs.user_id = uuh.user_id 
+           WHERE uqs.user_id COLLATE utf8mb4_unicode_ci = uuh.user_id COLLATE utf8mb4_unicode_ci
              AND uqs.quest_id = uuh.quest_id
          )
        ORDER BY uuh.uploaded_at DESC`
