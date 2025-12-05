@@ -1562,7 +1562,75 @@ async function initializePhotoMissions() {
   await initializeUploadHistoryTable();
   await initializeHongHistory();
   await initializePhotoMissions();
+  await syncPhotoQuestsToScores();
 })();
+
+// 기존 user_upload_history에 있는 사진 미션을 user_quest_scores에 동기화
+async function syncPhotoQuestsToScores() {
+  try {
+    console.log('[초기화] 사진 미션 동기화 시작...');
+    
+    // user_upload_history에서 quest_id가 있고, 해당 quest가 사진 미션인 경우 조회
+    const [uploadHistory] = await pool.execute(
+      `SELECT DISTINCT uuh.user_id, uuh.quest_id, uuh.uploaded_at
+       FROM user_upload_history uuh
+       INNER JOIN quests q ON uuh.quest_id = q.id
+       WHERE uuh.quest_id IS NOT NULL 
+         AND q.option_a = '사진 미션'
+         AND NOT EXISTS (
+           SELECT 1 FROM user_quest_scores uqs 
+           WHERE uqs.user_id = uuh.user_id 
+             AND uqs.quest_id = uuh.quest_id
+         )
+       ORDER BY uuh.uploaded_at DESC`
+    );
+
+    console.log(`[초기화] 동기화할 사진 미션 수: ${uploadHistory.length}개`);
+
+    for (const record of uploadHistory) {
+      try {
+        // quest 정보 조회
+        const [questRows] = await pool.execute(
+          'SELECT * FROM quests WHERE id = ?',
+          [record.quest_id]
+        );
+
+        if (questRows.length > 0) {
+          const quest = questRows[0];
+          
+          // user_quest_scores에 기록 (중복 방지)
+          await pool.execute(
+            `INSERT INTO user_quest_scores 
+             (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score, answered_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE 
+               user_id = user_id`,
+            [
+              record.user_id,
+              record.quest_id,
+              quest.city,
+              quest.town,
+              quest.village,
+              quest.question,
+              'PHOTO',
+              'A',
+              1,
+              record.uploaded_at // 업로드 시간을 answered_at으로 사용
+            ]
+          );
+
+          console.log(`[초기화] 사진 미션 동기화 완료 - user_id: ${record.user_id}, quest_id: ${record.quest_id}`);
+        }
+      } catch (syncError) {
+        console.error(`[초기화] 사진 미션 동기화 실패 - user_id: ${record.user_id}, quest_id: ${record.quest_id}:`, syncError.message);
+      }
+    }
+
+    console.log(`[초기화] 사진 미션 동기화 완료 - 총 ${uploadHistory.length}개 처리`);
+  } catch (error) {
+    console.error('[초기화] 사진 미션 동기화 중 오류:', error.message);
+  }
+}
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
