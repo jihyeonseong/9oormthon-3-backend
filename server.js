@@ -1234,11 +1234,16 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
             );
 
             if (result.affectedRows > 0) {
-              if (result.insertId) {
-                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 완료 (새 레코드)`);
+              // MySQL의 ON DUPLICATE KEY UPDATE:
+              // - 새 레코드: affectedRows = 1, insertId > 0
+              // - 업데이트: affectedRows = 2 (MySQL 5.7+) 또는 1 (MySQL 8.0+), insertId = 0
+              if (result.insertId && result.insertId > 0) {
+                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 완료 (새 레코드, insertId: ${result.insertId})`);
               } else {
-                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 업데이트 완료 (answered_at 갱신)`);
+                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 업데이트 완료 (answered_at 갱신, affectedRows: ${result.affectedRows})`);
               }
+            } else {
+              console.warn(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 실패 (affectedRows: 0)`);
             }
           }
         }
