@@ -1208,6 +1208,7 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
           if (isPhotoQuest) {
             // 사진 미션인 경우 user_quest_scores에 기록
             // 사진 미션은 완료 시 자동으로 정답 처리 (1점)
+            // user_answer는 CHAR(1)이므로 'PHOTO' 대신 'A' 사용
             await pool.execute(
               `INSERT INTO user_quest_scores 
                (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
@@ -1221,7 +1222,7 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
                 quest.town,
                 quest.village,
                 quest.question,
-                'PHOTO', // 사진 미션 완료 표시
+                'A', // 사진 미션 완료는 'A'로 표시 (CHAR(1) 제약)
                 'A', // 사진 미션은 항상 정답
                 1 // 사진 미션 완료 시 1점
               ]
@@ -1600,6 +1601,7 @@ async function syncPhotoQuestsToScores() {
           const quest = questRows[0];
           
           // user_quest_scores에 기록 (중복 방지)
+          // user_answer는 CHAR(1)이므로 'PHOTO' 대신 'A' 사용 (사진 미션은 완료 시 자동 정답 처리)
           await pool.execute(
             `INSERT INTO user_quest_scores 
              (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score, answered_at)
@@ -1613,8 +1615,8 @@ async function syncPhotoQuestsToScores() {
               quest.town,
               quest.village,
               quest.question,
-              'PHOTO',
-              'A',
+              'A', // 사진 미션 완료는 'A'로 표시 (CHAR(1) 제약)
+              'A', // 사진 미션은 항상 정답
               1,
               record.uploaded_at // 업로드 시간을 answered_at으로 사용
             ]
