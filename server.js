@@ -596,11 +596,13 @@ app.post('/api/quests/:id/check', async (req, res) => {
     const isCorrect = quest.correct_answer.toUpperCase() === answer.toUpperCase();
     const finalScore = isCorrect ? 1 : 0; // 맞췄으면 1점, 틀렸으면 0점
     
+    console.log(`[퀘스트 정답 확인] quest_id: ${id}, user_id: ${user_id || '없음'}, answer: ${answer}, correct: ${isCorrect}`);
+    
     // 사용자 ID가 제공된 경우 풀이 기록 저장 (한 번 기록되면 변경되지 않음)
     if (user_id) {
       try {
         // 풀이 기록 저장 (ON DUPLICATE KEY UPDATE로 중복 방지, 한 번 기록되면 변경 안 됨)
-        await pool.execute(
+        const [result] = await pool.execute(
           `INSERT INTO user_quest_scores 
            (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -618,10 +620,23 @@ app.post('/api/quests/:id/check', async (req, res) => {
             finalScore
           ]
         );
+        
+        if (result.affectedRows > 0) {
+          console.log(`[퀘스트 정답 확인] 저장 성공 - user_id: ${user_id}, quest_id: ${id}, affectedRows: ${result.affectedRows}`);
+        } else {
+          console.log(`[퀘스트 정답 확인] 저장됨 (중복 또는 업데이트 없음) - user_id: ${user_id}, quest_id: ${id}`);
+        }
       } catch (scoreError) {
-        console.error('Error saving quest record:', scoreError);
+        console.error('[퀘스트 정답 확인] 저장 실패:', {
+          error: scoreError.message,
+          stack: scoreError.stack,
+          user_id: user_id,
+          quest_id: id
+        });
         // 기록 저장 실패해도 정답 확인은 진행
       }
+    } else {
+      console.warn(`[퀘스트 정답 확인] user_id가 없어서 저장하지 않음 - quest_id: ${id}`);
     }
     
     // 정답 확인 페이지에 필요한 모든 정보 반환
@@ -745,6 +760,29 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
        ORDER BY uqs.answered_at DESC`,
       [user_id]
     );
+    
+    console.log(`[퀘스트 조회] 조회된 퀘스트 수: ${rows.length}개`);
+    
+    // 디버깅: 조회된 퀘스트 정보 출력
+    if (rows.length > 0) {
+      console.log(`[퀘스트 조회] 첫 번째 퀘스트 샘플:`, {
+        id: rows[0].id,
+        quest_id: rows[0].quest_id,
+        user_id: rows[0].user_id,
+        question: rows[0]['푼 문제']?.substring(0, 50)
+      });
+    } else {
+      console.warn(`[퀘스트 조회] user_id '${user_id}'에 대한 퀘스트 기록이 없습니다.`);
+      
+      // 디버깅: user_quest_scores 테이블에 데이터가 있는지 확인
+      try {
+        const [allScores] = await pool.execute('SELECT COUNT(*) as count FROM user_quest_scores');
+        const [userScores] = await pool.execute('SELECT COUNT(*) as count FROM user_quest_scores WHERE user_id = ?', [user_id]);
+        console.log(`[퀘스트 조회] 디버깅 - 전체 기록 수: ${allScores[0].count}, ${user_id} 기록 수: ${userScores[0].count}`);
+      } catch (debugError) {
+        console.error('[퀘스트 조회] 디버깅 쿼리 실패:', debugError.message);
+      }
+    }
     
     // 각 quest_id에 대해 user_upload_history에서 이미지 URL 조회
     // 업로드된 이미지가 없으면 기본 이미지(seongsan0, seongsan1, seongsan2) 사용
