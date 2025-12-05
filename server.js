@@ -776,9 +776,10 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     }
     
     console.log(`[퀘스트 조회] user_id: ${user_id}`);
+    console.log(`[퀘스트 조회] user_id (hex): ${Buffer.from(user_id, 'utf8').toString('hex')}`);
     
     // quest_id를 기반으로 quests 테이블과 JOIN하여 city, town, village 가져오기
-    const [rows] = await pool.execute(
+    let [rows] = await pool.execute(
       `SELECT 
         uqs.id,
         uqs.user_id,
@@ -799,6 +800,23 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     );
     
     console.log(`[퀘스트 조회] 조회된 퀘스트 수: ${rows.length}개`);
+    
+    // 디버깅: 실제 DB 쿼리 결과 확인
+    if (rows.length === 0) {
+      console.warn(`[퀘스트 조회] 조회 결과가 0개입니다. 직접 쿼리로 확인합니다.`);
+      try {
+        const [debugRows] = await pool.execute(
+          `SELECT id, user_id, quest_id FROM user_quest_scores WHERE user_id = ? LIMIT 5`,
+          [user_id]
+        );
+        console.log(`[퀘스트 조회] 직접 쿼리 결과: ${debugRows.length}개`);
+        if (debugRows.length > 0) {
+          console.log(`[퀘스트 조회] 첫 번째 레코드:`, debugRows[0]);
+        }
+      } catch (debugError) {
+        console.error(`[퀘스트 조회] 디버깅 쿼리 실패:`, debugError.message);
+      }
+    }
     
     // 디버깅: 조회된 퀘스트 정보 출력
     if (rows.length > 0) {
@@ -1172,6 +1190,50 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
     } catch (historyError) {
       // 히스토리 저장 실패해도 업로드는 성공으로 처리
       console.error('[업로드 히스토리 저장 실패]:', historyError.message, historyError.stack);
+    }
+
+    // 사진 미션인 경우 user_quest_scores에도 저장
+    if (quest_id) {
+      try {
+        // quest 정보 조회 (사진 미션인지 확인)
+        const [questRows] = await pool.execute(
+          'SELECT * FROM quests WHERE id = ?',
+          [quest_id]
+        );
+
+        if (questRows.length > 0) {
+          const quest = questRows[0];
+          const isPhotoQuest = quest.option_a === '사진 미션';
+
+          if (isPhotoQuest) {
+            // 사진 미션인 경우 user_quest_scores에 기록
+            // 사진 미션은 완료 시 자동으로 정답 처리 (1점)
+            await pool.execute(
+              `INSERT INTO user_quest_scores 
+               (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE 
+                 user_id = user_id`, // 중복 시 업데이트하지 않음
+              [
+                user_id,
+                quest_id,
+                quest.city,
+                quest.town,
+                quest.village,
+                quest.question,
+                'PHOTO', // 사진 미션 완료 표시
+                'A', // 사진 미션은 항상 정답
+                1 // 사진 미션 완료 시 1점
+              ]
+            );
+
+            console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 완료`);
+          }
+        }
+      } catch (scoreError) {
+        // 사진 미션 기록 저장 실패해도 업로드는 성공으로 처리
+        console.error('[사진 미션 기록 저장 실패]:', scoreError.message, scoreError.stack);
+      }
     }
 
     console.log(`[S3 업로드] 업로드 성공 - user_id: ${user_id}, quest_id: ${quest_id || 'N/A'}, file: ${fileName}, url: ${fileUrl}`);
