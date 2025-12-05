@@ -1214,12 +1214,12 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
             // 사진 미션인 경우 user_quest_scores에 기록
             // 사진 미션은 완료 시 자동으로 정답 처리 (1점)
             // user_answer는 CHAR(1)이므로 'PHOTO' 대신 'A' 사용
-            await pool.execute(
+            const [result] = await pool.execute(
               `INSERT INTO user_quest_scores 
-               (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (user_id, quest_id, city, town, village, question, user_answer, correct_answer, score, answered_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                ON DUPLICATE KEY UPDATE 
-                 user_id = user_id`, // 중복 시 업데이트하지 않음
+                 answered_at = NOW()`, // 중복 시 최신 업로드 시간으로 업데이트
               [
                 user_id,
                 quest_id,
@@ -1233,7 +1233,13 @@ app.post('/api/s3/upload', upload.single('file'), handleMulterError, async (req,
               ]
             );
 
-            console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 완료`);
+            if (result.affectedRows > 0) {
+              if (result.insertId) {
+                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 저장 완료 (새 레코드)`);
+              } else {
+                console.log(`[사진 미션 기록] user_id: ${user_id}, quest_id: ${quest_id} 업데이트 완료 (answered_at 갱신)`);
+              }
+            }
           }
         }
       } catch (scoreError) {
