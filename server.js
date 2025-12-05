@@ -11,11 +11,16 @@ app.use(express.json());
 
 // 모든 요청 로깅 (디버깅용)
 app.use((req, res, next) => {
-  if (req.path.includes('/quests') && req.method === 'POST') {
+  // POST 요청과 /quests 관련 요청 모두 로깅
+  if (req.method === 'POST' || req.path.includes('/quests') || req.path.includes('/check')) {
     console.log(`[요청 로그] ${req.method} ${req.path}`, {
       params: req.params,
       body: req.body,
-      query: req.query
+      query: req.query,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'user-agent': req.headers['user-agent']
+      }
     });
   }
   next();
@@ -571,6 +576,17 @@ app.get('/api/quests/random', async (req, res) => {
 
 // 퀘스트 정답 확인 및 점수 기록
 app.post('/api/quests/:id/check', async (req, res) => {
+  console.log(`[퀘스트 정답 확인] ========== 엔드포인트 진입 ==========`);
+  console.log(`[퀘스트 정답 확인] 요청 URL: ${req.url}`);
+  console.log(`[퀘스트 정답 확인] 요청 Method: ${req.method}`);
+  console.log(`[퀘스트 정답 확인] 요청 Path: ${req.path}`);
+  console.log(`[퀘스트 정답 확인] 요청 Params:`, req.params);
+  console.log(`[퀘스트 정답 확인] 요청 Body:`, req.body);
+  console.log(`[퀘스트 정답 확인] 요청 Headers:`, {
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length']
+  });
+  
   try {
     const { id } = req.params;
     const { answer, user_id } = req.body; // user_id는 user_id 필드 (예: "지현23")
