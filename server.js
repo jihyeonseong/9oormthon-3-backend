@@ -778,6 +778,11 @@ app.get('/api/users/:user_id/quests', async (req, res) => {
     console.log(`[퀘스트 조회] user_id: ${user_id}`);
     console.log(`[퀘스트 조회] user_id (hex): ${Buffer.from(user_id, 'utf8').toString('hex')}`);
     
+    // 조회 전에 누락된 사진 미션 자동 동기화 (백그라운드로 실행, 실패해도 조회는 계속)
+    syncPhotoQuestsToScores().catch(err => {
+      console.warn('[퀘스트 조회] 사진 미션 자동 동기화 실패 (무시):', err.message);
+    });
+    
     // quest_id를 기반으로 quests 테이블과 JOIN하여 city, town, village 가져오기
     let [rows] = await pool.execute(
       `SELECT 
